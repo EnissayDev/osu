@@ -76,7 +76,7 @@ namespace osu.Game.Rulesets.Mania.Difficulty
             countOk = score.Statistics.GetValueOrDefault(HitResult.Ok);
             countMeh = score.Statistics.GetValueOrDefault(HitResult.Meh);
             countMiss = score.Statistics.GetValueOrDefault(HitResult.Miss);
-            isLegacyScore = score.Mods.Any(m => m is ManiaModClassic) && (totalHits + 0.1) > maniaAttributes.NoteCount + maniaAttributes.HoldNoteCount;
+            isLegacyScore = score.isLegacyScore;
 
             double[] hitWindows = isLegacyScore
                 ? getLegacyHitWindows(score.Mods, false, maniaAttributes.OverallDifficulty)
