@@ -42,10 +42,18 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Preprocessing
         private const double mash_cross_lo = 0.10;
         private const double mash_cross_hi = 0.22;
 
-        private const double jumptrill_nerf = 0.88;
-        private const double jumptrill_ramp = 2.5;
-        private const double jumptrill_speed_hi_ms = 140.0;
-        private const double jumptrill_speed_lo_ms = 38.0;
+        private const double jumptrill_nerf = 0.97;
+        private const double jumptrill_run_lo = 3.0;
+        private const double jumptrill_run_hi = 8.0;
+        private const int jumptrill_run_cap = 200;
+        private const double jumptrill_speed_hi_ms = 130.0;
+        private const double jumptrill_speed_lo_ms = 35.0;
+        private const double jumptrill_vfast_hi_ms = 50.0;
+        private const double jumptrill_vfast_lo_ms = 36.0;
+        private const double jumptrill_vfast_taper = 0.6;
+        private const double jumptrill_bridge_ms = 130.0;
+        private const double jumptrill_cross_lo = 0.06;
+        private const double jumptrill_cross_hi = 0.16;
 
         private const double stamina_buff = 0.52;
         private const double stamina_speed_hi_ms = 85.0;
@@ -71,7 +79,7 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Preprocessing
 
             bool[] handLocal = new bool[rows.Count];
             for (int i = 0; i < rows.Count; i++)
-                handLocal[i] = isHandLocal(rows[i].Columns, totalColumns);
+                handLocal[i] = handOf(rows[i].Columns, totalColumns) != Hand.Both;
 
             for (int i = 0; i < rows.Count; i++)
             {
@@ -80,7 +88,7 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Preprocessing
                 double manipulationFactor = Math.Min(
                     Math.Min(
                         rollAndPatternFactor(rows, i, timeSincePreviousRow),
-                        jumptrillFactor(rows, i, timeSincePreviousRow)),
+                        jumptrillFactor(rows, handLocal, i, timeSincePreviousRow, totalColumns)),
                     mashFactor(rows, handLocal, i, timeSincePreviousRow));
 
                 double staminaFactor = staminaFactorFor(rows, i, timeSincePreviousRow);
@@ -96,11 +104,6 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Preprocessing
             }
         }
 
-        /// <summary>
-        /// Counts how many consecutive rows immediately before <paramref name="row"/> satisfy <paramref name="condition"/>,
-        /// stopping early at <paramref name="cap"/>. <paramref name="condition"/> receives the index of the earlier of the
-        /// two rows being compared on each step (i.e. it is called once per adjacent row pair, walking backward).
-        /// </summary>
         private static int countRunBackward(int row, int cap, Func<int, bool> condition)
         {
             int run = 0;
@@ -144,10 +147,8 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Preprocessing
 
         private static int longestRollOrPeriodicRun(IReadOnlyList<ManiaRow> rows, int row)
         {
-            // "Roll": each row shifted by the same constant column offset from the previous row (e.g. 1,2,3,4 repeating with a +1 shift).
             int run = countRunBackward(row, run_cap, earlier => columnShift(rows[earlier].Columns, rows[earlier + 1].Columns) != 0);
 
-            // Periodic jacks/patterns: row N repeats row N-period, for small periods.
             for (int period = 2; period <= max_period; period++)
                 run = Math.Max(run, periodRunLength(rows, row, period));
 
@@ -167,33 +168,78 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Preprocessing
             return run;
         }
 
-        private static double jumptrillFactor(IReadOnlyList<ManiaRow> rows, int row, double timeSincePreviousRow)
+        private static double jumptrillFactor(IReadOnlyList<ManiaRow> rows, bool[] handLocal, int row, double timeSincePreviousRow, int totalColumns)
         {
-            if (!rows[row].IsJump)
+            if (!handLocal[row])
                 return 1.0;
 
-            double speedScale = DiffUtils.Smoothstep(jumptrill_speed_hi_ms - timeSincePreviousRow, 0.0, jumptrill_speed_hi_ms - jumptrill_speed_lo_ms);
+            double speedScale = DiffUtils.Smoothstep(jumptrill_speed_hi_ms - timeSincePreviousRow, 0.0, jumptrill_speed_hi_ms - jumptrill_speed_lo_ms)
+                                * (1.0 - jumptrill_vfast_taper * DiffUtils.Smoothstep(jumptrill_vfast_hi_ms - timeSincePreviousRow, 0.0, jumptrill_vfast_hi_ms - jumptrill_vfast_lo_ms));
 
             if (speedScale <= 0.0)
                 return 1.0;
 
-            int run = 0;
+            int run = jumptrillChainLength(rows, handLocal, row, totalColumns);
+
+            double runWeight = DiffUtils.Smoothstep(run, jumptrill_run_lo, jumptrill_run_hi);
+
+            if (runWeight <= 0.0)
+                return 1.0;
+
+            double crossGate = isStrictJumptrill(rows, row)
+                ? 1.0
+                : 1.0 - DiffUtils.Smoothstep(localCrossHandDensity(handLocal, row), jumptrill_cross_lo, jumptrill_cross_hi);
+
+            return 1.0 - jumptrill_nerf * runWeight * speedScale * crossGate;
+        }
+
+        private static int jumptrillChainLength(IReadOnlyList<ManiaRow> rows, bool[] handLocal, int row, int totalColumns)
+        {
+            int run = 1;
 
             for (int k = row;
-                 k - 2 >= 0
-                 && rows[k].IsJump
-                 && sameColumns(rows[k].Columns, rows[k - 2].Columns)
-                 && !sameColumns(rows[k].Columns, rows[k - 1].Columns);
+                 run < jumptrill_run_cap && k - 1 >= 0 && handLocal[k - 1]
+                 && rows[k].StartTime - rows[k - 1].StartTime <= jumptrill_bridge_ms
+                 && isMashStep(rows[k], rows[k - 1], totalColumns);
                  k--)
             {
                 run++;
             }
 
-            if (run == 0)
-                return 1.0;
+            for (int k = row;
+                 run < jumptrill_run_cap && k + 1 < rows.Count && handLocal[k + 1]
+                 && rows[k + 1].StartTime - rows[k].StartTime <= jumptrill_bridge_ms
+                 && isMashStep(rows[k + 1], rows[k], totalColumns);
+                 k++)
+            {
+                run++;
+            }
 
-            double runWeight = DiffUtils.ReverseLerp(run, 0.0, jumptrill_ramp);
-            return 1.0 - jumptrill_nerf * runWeight * speedScale;
+            return run;
+        }
+
+        /// <summary>
+        /// True when <paramref name="a"/> and <paramref name="b"/> (both one-hand rows) form a mashable jumptrill step:
+        /// opposite hands with at least one row a one-hand jump (the note that makes it a chord-trill rather than a plain
+        /// handstream), or the same hand as a single-note one-column roll.
+        /// </summary>
+        private static bool isMashStep(ManiaRow a, ManiaRow b, int totalColumns)
+        {
+            if (handOf(a.Columns, totalColumns) != handOf(b.Columns, totalColumns))
+                return a.Size >= 2 || b.Size >= 2;
+
+            return a.Size == 1 && b.Size == 1 && Math.Abs(a.Columns[0] - b.Columns[0]) == 1;
+        }
+
+        private static bool isStrictJumptrill(IReadOnlyList<ManiaRow> rows, int row)
+        {
+            if (!rows[row].IsJump)
+                return false;
+
+            bool recursBefore = row - 2 >= 0 && sameColumns(rows[row].Columns, rows[row - 2].Columns) && !sameColumns(rows[row].Columns, rows[row - 1].Columns);
+            bool recursAfter = row + 2 < rows.Count && sameColumns(rows[row].Columns, rows[row + 2].Columns) && !sameColumns(rows[row].Columns, rows[row + 1].Columns);
+
+            return recursBefore || recursAfter;
         }
 
         private static double mashFactor(IReadOnlyList<ManiaRow> rows, bool[] handLocal, int row, double timeSincePreviousRow)
@@ -222,7 +268,19 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Preprocessing
             return 1.0 - mash_nerf * runWeight * speedScale * chordGate * crossGate;
         }
 
-        private static bool isHandLocal(int[] columns, int totalColumns)
+        private enum Hand
+        {
+            Left,
+            Right,
+            Both,
+        }
+
+        /// <summary>
+        /// Which hand plays the row: <see cref="Hand.Left"/> or <see cref="Hand.Right"/> for a one-hand row
+        /// (a middle-only or empty row counts as <see cref="Hand.Left"/>), or <see cref="Hand.Both"/> when it
+        /// spans both hands. A row is hand-local exactly when this is not <see cref="Hand.Both"/>.
+        /// </summary>
+        private static Hand handOf(int[] columns, int totalColumns)
         {
             bool hasLeft = false;
             bool hasRight = false;
@@ -231,11 +289,14 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Preprocessing
             {
                 if (c < totalColumns / 2)
                     hasLeft = true;
-                if (c >= (totalColumns + 1) / 2)
+                else if (c >= (totalColumns + 1) / 2)
                     hasRight = true;
             }
 
-            return !(hasLeft && hasRight);
+            if (hasLeft && hasRight)
+                return Hand.Both;
+
+            return hasRight ? Hand.Right : Hand.Left;
         }
 
         private static double localCrossHandDensity(bool[] handLocal, int row)
