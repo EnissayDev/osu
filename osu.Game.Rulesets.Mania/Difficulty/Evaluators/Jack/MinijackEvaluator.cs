@@ -96,6 +96,7 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators.Jack
             return 1.0 + minijack_buff * speedGate * manipGate * runGate * recurGate * sizeDampen * strainDampen;
         }
 
+
         private static double localChordSize(ManiaDifficultyHitObject current)
         {
             double sum = current.Row.Size;

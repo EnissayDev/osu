@@ -48,6 +48,22 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
         private const double single_jack_nerf_center = 5.5;
         private const double single_jack_nerf_width = 0.7;
 
+        private const double loose_jack_strength = 0.45;
+        private const double loose_jack_cd_lo = 78.0;
+        private const double loose_jack_cd_hi = 90.0;
+        private const double loose_jack_ratio_lo = 1.5;
+        private const double loose_jack_ratio_hi = 2.2;
+        private const int loose_jack_chord_radius = 6;
+        private const double loose_jack_chord_lo = 0.50;
+        private const double loose_jack_chord_hi = 0.78;
+        private const double loose_jack_repeat_lo = 0.25;
+        private const double loose_jack_repeat_hi = 0.55;
+
+        private const double loose_jack_run_lo = 3.0;
+        private const double loose_jack_run_hi = 6.0;
+        private const double loose_jack_run_window_ms = 130.0;
+        private const int loose_jack_run_scan = 32;
+
         private const double incidental_jack_nerf_strength = 0.9;
         private const double incidental_jack_ratio_lo = 2.2;
         private const double incidental_jack_ratio_hi = 3.2;
@@ -89,6 +105,7 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
 
             jackDifficulty *= calculateSingleJackNerf(rowSize, tapRate);
             jackDifficulty *= calculateIncidentalJackNerf(current, rowSize);
+            jackDifficulty *= calculateLooseJackNerf(current, columnDelta);
 
             return jackDifficulty * jack_multiplier * total_weight;
         }
@@ -166,6 +183,90 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
             double purityGate = DiffUtils.Smoothstep(singleNoteContextFraction(current), incidental_jack_context_lo, incidental_jack_context_hi);
 
             return 1.0 - incidental_jack_nerf_strength * ratioGate * slowGate * purityGate;
+        }
+
+        private static double calculateLooseJackNerf(ManiaDifficultyHitObject current, double columnDelta)
+        {
+            double rowGap = current.DeltaTime;
+            if (rowGap <= 1.0) return 1.0;
+
+            // Only genuine same-column jacks (the repeat lands on or near the next row), not stream-induced repeats.
+            double ratio = columnDelta / rowGap;
+            double ratioGate = 1.0 - DiffUtils.Smoothstep(ratio, loose_jack_ratio_lo, loose_jack_ratio_hi);
+            if (ratioGate <= 0.0) return 1.0;
+
+            // Slow enough to be a loose filler jack rather than a fast tapped one.
+            double speedGate = DiffUtils.Smoothstep(columnDelta, loose_jack_cd_lo, loose_jack_cd_hi);
+            if (speedGate <= 0.0) return 1.0;
+
+            // Rotating dense chordjacks are spared (kept chordjacks), but hammered same-chord repeats are not.
+            localChordStats(current, out double chordFraction, out double repeatFraction);
+            double chordSpare = DiffUtils.Smoothstep(chordFraction, loose_jack_chord_lo, loose_jack_chord_hi)
+                                * (1.0 - DiffUtils.Smoothstep(repeatFraction, loose_jack_repeat_lo, loose_jack_repeat_hi));
+
+            // Sustained anchor runs are spared: a jack that keeps repeating in one column is stamina, not filler.
+            double runSpare = DiffUtils.Smoothstep(sameColumnRunLength(current), loose_jack_run_lo, loose_jack_run_hi);
+
+            return 1.0 - loose_jack_strength * ratioGate * speedGate * (1.0 - chordSpare) * (1.0 - runSpare);
+        }
+
+        /// <summary>
+        /// The number of consecutive hits in <paramref name="current"/>'s own column, forwards and backwards, whose
+        /// step gap stays within <see cref="loose_jack_run_window_ms"/> — i.e. how long the same-column anchor runs.
+        /// </summary>
+        private static int sameColumnRunLength(ManiaDifficultyHitObject current)
+        {
+            int run = 1;
+
+            ManiaDifficultyHitObject note = current;
+
+            for (int back = 0; back < loose_jack_run_scan; back++)
+            {
+                var prev = current.PrevInColumn(back);
+                if (prev == null || note.StartTime - prev.StartTime > loose_jack_run_window_ms) break;
+                run++;
+                note = prev;
+            }
+
+            note = current;
+
+            for (int forward = 0; forward < loose_jack_run_scan; forward++)
+            {
+                var next = current.NextInColumn(forward);
+                if (next == null || next.StartTime - note.StartTime > loose_jack_run_window_ms) break;
+                run++;
+                note = next;
+            }
+
+            return run;
+        }
+
+        private static void localChordStats(ManiaDifficultyHitObject current, out double chordFraction, out double repeatFraction)
+        {
+            int dense = 0, repeated = 0, total = 0;
+            void accumulate(ManiaRow? row)
+            {
+                if (row == null) return;
+                total++;
+                if (row.Size < 3) return;
+                dense++;
+                var previous = row.Previous();
+                if (previous != null && sameColumns(previous.Columns, row.Columns)) repeated++;
+            }
+            ManiaRow? r = current.Row;
+            for (int i = 0; i <= loose_jack_chord_radius && r != null; i++, r = r.Previous()) accumulate(r);
+            r = current.Row?.Next();
+            for (int i = 0; i < loose_jack_chord_radius && r != null; i++, r = r.Next()) accumulate(r);
+            chordFraction = total > 0 ? (double)dense / total : 0.0;
+            repeatFraction = dense > 0 ? (double)repeated / dense : 0.0;
+        }
+
+        private static bool sameColumns(int[] a, int[] b)
+        {
+            if (a.Length != b.Length) return false;
+            for (int i = 0; i < a.Length; i++)
+                if (a[i] != b[i]) return false;
+            return true;
         }
 
         private static double singleNoteContextFraction(ManiaDifficultyHitObject current)

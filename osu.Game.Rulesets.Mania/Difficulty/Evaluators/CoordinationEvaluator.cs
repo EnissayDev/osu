@@ -24,6 +24,10 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
 
         private const double total_weight = 1.81659; // sqrt(3.3)
 
+        private const double saturation_threshold = 13.0;
+        private const double saturation_strength = 0.75;
+        private const double saturation_width = 1.5;
+
         public static double EvaluateDifficultyOf(ManiaDifficultyHitObject current)
         {
             double coordinationDifficulty = calculateBoundaryPressure(current);
@@ -36,7 +40,14 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
 
             coordinationDifficulty *= current.ManipulationFactor * current.StaminaFactor;
 
-            return coordinationDifficulty * total_weight;
+            return saturate(coordinationDifficulty * total_weight);
+        }
+
+        private static double saturate(double strain)
+        {
+            double z = (strain - saturation_threshold) / saturation_width;
+            double softExcess = saturation_width * (Math.Max(z, 0.0) + Math.Log(1.0 + Math.Exp(-Math.Abs(z))));
+            return strain - saturation_strength * softExcess;
         }
 
         /// <summary>

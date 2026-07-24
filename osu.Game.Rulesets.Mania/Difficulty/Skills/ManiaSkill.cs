@@ -29,7 +29,7 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Skills
         protected override double ProcessInternal(DifficultyHitObject current)
         {
             BaseNoteCount++;
-            totalNoteWeight += GetNoteWeight(current);
+            totalNoteWeight += getNoteWeight(current);
 
             double difficulty = DifficultyAt(current);
 
@@ -39,7 +39,7 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Skills
             return difficulty;
         }
 
-        protected virtual double GetNoteWeight(DifficultyHitObject current)
+        private double getNoteWeight(DifficultyHitObject current)
         {
             const double max_long_note_weight_duration_ms = 1000.0;
             const double long_note_weight_per_200_ms = 0.6;
@@ -69,6 +69,21 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Skills
             double high = strainAtPercentile(0.90);
 
             return high > 0 ? median / high : 1.0;
+        }
+
+        public double CountDifficultStrains()
+        {
+            if (sortedDifficulties.Count == 0)
+                return 0.0;
+
+            sortedDifficulties.Sort();
+
+            double top = strainAtPercentile(0.93);
+
+            if (top <= 0)
+                return sortedDifficulties.Count;
+
+            return sortedDifficulties.Sum(s => DiffUtils.Logistic(s / top, 0.88, 10.0, 1.1));
         }
 
         private double strainAtPercentile(double percentile)

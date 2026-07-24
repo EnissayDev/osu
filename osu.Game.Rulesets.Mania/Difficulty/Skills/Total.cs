@@ -19,9 +19,9 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Skills
         private readonly IReadonlyDifficultyProcessor speedProcessor;
         private readonly IReadonlyDifficultyProcessor technicalProcessor;
 
-        private readonly bool includeReleases;
+        private const double release_weight = 0.72;
 
-        public Total(Mod[] mods, bool includeReleases,
+        public Total(Mod[] mods,
                      IReadonlyDifficultyProcessor coordinationProcessor,
                      IReadonlyDifficultyProcessor jackProcessor,
                      IReadonlyDifficultyProcessor releaseProcessor,
@@ -29,7 +29,6 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Skills
                      IReadonlyDifficultyProcessor technicalProcessor)
             : base(mods)
         {
-            this.includeReleases = includeReleases;
             this.coordinationProcessor = coordinationProcessor;
             this.jackProcessor = jackProcessor;
             this.releaseProcessor = releaseProcessor;
@@ -37,24 +36,14 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Skills
             this.technicalProcessor = technicalProcessor;
         }
 
-        protected override double GetNoteWeight(DifficultyHitObject current)
-        {
-            return includeReleases ? base.GetNoteWeight(current) : 1.0;
-        }
-
         protected override double DifficultyAt(DifficultyHitObject current)
         {
             double coordinationDifficulty = coordinationProcessor.CurrentStrain;
-            double releaseDifficulty = includeReleases ? releaseProcessor.CurrentStrain : 0;
+            double releaseDifficulty = releaseProcessor.CurrentStrain;
             double speedDifficulty = speedProcessor.CurrentStrain;
             double jackDifficulty = jackProcessor.CurrentStrain;
             double technicalDifficulty = technicalProcessor.CurrentStrain;
 
-            return combinedDifficulty(coordinationDifficulty, releaseDifficulty, speedDifficulty, jackDifficulty, technicalDifficulty);
-        }
-
-        private double combinedDifficulty(double coordinationDifficulty, double releaseDifficulty, double speedDifficulty, double jackDifficulty, double technicalDifficulty)
-        {
             const int combine_lambda = 2;
 
             double powerSum = DiffUtils.Pow(speedDifficulty, combine_lambda)
@@ -63,7 +52,8 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Skills
                               + DiffUtils.Pow(technicalDifficulty, combine_lambda);
 
             double tapDifficulty = powerSum > 0 ? DiffUtils.Pow(powerSum, 1.0 / combine_lambda) : 0.0;
-            return tapDifficulty + releaseDifficulty;
+
+            return tapDifficulty + release_weight * releaseDifficulty;
         }
     }
 }

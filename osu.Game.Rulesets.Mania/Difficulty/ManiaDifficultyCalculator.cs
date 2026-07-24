@@ -29,29 +29,31 @@ namespace osu.Game.Rulesets.Mania.Difficulty
         private const double overall_multiplier = 0.360643;
         private const double power_exponent = 0.52899;
 
-        /// SR *= (1 - full_ln_damper * lnRatio^2).
-        private const double full_ln_damper = 0.06263;
+        // Strain-length bonus. Every map starts nerfed by strain_length_base_nerf; the bonus then lifts it back toward its full
+        // rating in proportion to how much sustained difficulty it carries (difficulty-weighted strain count, taiko's
+        // length-bonus measure). A full-length map earns the whole bonus and lands exactly on its un-nerfed rating; a
+        // short map earns little and stays down. Long holds add content the note count can't see, so they count toward
+        // "full length".
+        private const double strain_length_base_nerf = 0.195;
+        private const double strain_length_full_strains = 420.0;
+        private const double strain_length_max = strain_length_base_nerf / (1.0 - strain_length_base_nerf); // restores a full-length map to exactly 1.0
+        private const double strain_length_hold_lo = 250.0;
+        private const double strain_length_hold_hi = 450.0;
 
-        private const double ln_hybrid_damper = 0.028;
-        private const double ln_hybrid_ramp_lo = 0.15;
-        private const double ln_hybrid_ramp_hi = 0.35;
-        private const double ln_hybrid_fade_lo = 0.50;
-        private const double ln_hybrid_fade_hi = 0.75;
+        private const double consistency_base_nerf = 0.18;
+        private const double consistency_bonus_max = consistency_base_nerf / (1.0 - consistency_base_nerf); // restores a fully consistent map to exactly 1.0
+        private const double consistency_ratio_lo = 0.24;
+        private const double consistency_ratio_hi = 0.50;
 
-        private const double short_map_nerf = 0.195;
-        private const double short_map_cap_notes = 197.0;
-        private const double short_map_sustain_lo = 250.0;
-        private const double short_map_sustain_hi = 450.0;
-
-        private const double spike_damper_strength = 0.118;
-        private const double spike_sustain_ratio_lo = 0.24;
-        private const double spike_sustain_ratio_hi = 0.50;
-
-        private const double high_end_compression_knee = 11.5;
-        private const double high_end_compression_strength = 0.5;
-
-        private const double high_end_coordination_gate_lo = 7.40522;
-        private const double high_end_coordination_gate_hi = 11.65637;
+        private const double jack_breadth_buff = 0.05;
+        private const double jack_breadth_jack_lo = 5.6;
+        private const double jack_breadth_jack_hi = 6.0;
+        private const double jack_breadth_speed_lo = 3.0;
+        private const double jack_breadth_speed_hi = 3.5;
+        private const double jack_breadth_dominance_lo = 0.78;
+        private const double jack_breadth_dominance_hi = 0.85;
+        private const double jack_breadth_fade_lo = 9.6;
+        private const double jack_breadth_fade_hi = 11.0;
 
         private const double od_weight = 0.188;
 
@@ -70,8 +72,7 @@ namespace osu.Game.Rulesets.Mania.Difficulty
             if (beatmap.HitObjects.Count == 0)
                 return new ManiaDifficultyAttributes { Mods = mods };
 
-            var totalSkill = skills.OfType<Total>().First();
-            var totalSkillNoReleases = skills.OfType<Total>().Last();
+            var totalSkill = skills.OfType<Total>().Single();
             var speedSkill = skills.OfType<Speed>().Single();
             var technicalSkill = skills.OfType<Technical>().Single();
             var jackSkill = skills.OfType<Jack>().Single();
@@ -95,25 +96,24 @@ namespace osu.Game.Rulesets.Mania.Difficulty
             int holdNotes = beatmap.HitObjects.Count(h => h is HoldNote);
 
             double lnRatio = totalNotes > 0 ? (double)holdNotes / totalNotes : 0.0;
-            double hybridLn = DiffUtils.Smoothstep(lnRatio, ln_hybrid_ramp_lo, ln_hybrid_ramp_hi) * (1.0 - DiffUtils.Smoothstep(lnRatio, ln_hybrid_fade_lo, ln_hybrid_fade_hi));
-            double lnDamper = (1.0 - full_ln_damper * lnRatio * lnRatio) * (1.0 - ln_hybrid_damper * hybridLn);
 
-            int columns = ((ManiaBeatmap)Beatmap).TotalColumns;
             double meanHoldMs = holdNotes > 0 ? beatmap.HitObjects.OfType<HoldNote>().Average(h => h.Duration) : 0.0;
-            double shortMapMult = shortMapNerf(totalNotes, columns, meanHoldMs);
-            double spikeMult = spikeNerf(totalSkill.SustainRatio());
+            double lengthBonus = strainLengthBonus(totalSkill.CountDifficultStrains(), meanHoldMs);
+            double consistencyMult = consistencyBonus(totalSkill.SustainRatio());
 
             double totalDifficulty = totalSkill.DifficultyValue();
-            double totalDifficultyNoReleases = totalSkillNoReleases.DifficultyValue();
-            double lnKeyedMult = monotonicLnMultiplier(lnDamper, totalDifficulty, totalDifficultyNoReleases);
+            double coordinationDifficulty = coordinationSkill.DifficultyValue();
 
             double speedStarRating = scaleToStarRating(speedSkill.DifficultyValue()) * odMult;
             double technicalStarRating = scaleToStarRating(technicalSkill.DifficultyValue()) * odMult;
             double jackStarRating = scaleToStarRating(jackSkill.DifficultyValue()) * odMult;
-            double coordinationStarRating = scaleToStarRating(coordinationSkill.DifficultyValue()) * odMult;
+            double coordinationStarRating = scaleToStarRating(coordinationDifficulty) * odMult;
             double releaseStarRating = scaleToStarRating(releaseSkill.DifficultyValue()) * odMult;
 
-            double starRating = computeStarRating(totalDifficulty, odMult, lnKeyedMult, spikeMult * shortMapMult, coordinationStarRating);
+            double starRating = scaleToStarRating(totalDifficulty * consistencyMult)
+                                * odMult
+                                * lengthBonus;
+            starRating *= jackBreadthBuff(jackStarRating, speedStarRating, starRating);
 
             return new ManiaDifficultyAttributes
             {
@@ -149,54 +149,34 @@ namespace osu.Game.Rulesets.Mania.Difficulty
             return sumSquares > 0 ? sum * sum / sumSquares : 1.0;
         }
 
-        private static double shortMapNerf(int totalNotes, int columns, double meanHoldMs)
+        private static double strainLengthBonus(double difficultStrains, double meanHoldMs)
         {
-            double perColumnNotes = columns > 0 ? (double)totalNotes / columns : totalNotes;
-            double shortness = 1.0 - Math.Clamp(perColumnNotes / short_map_cap_notes, 0.0, 1.0);
+            double lengthFraction = Math.Clamp(difficultStrains / strain_length_full_strains, 0.0, 1.0);
 
-            double sustainProtection = DiffUtils.Smoothstep(meanHoldMs, short_map_sustain_lo, short_map_sustain_hi);
-            shortness *= 1.0 - sustainProtection;
+            // Long holds add sustained content the note count can't see, so treat them as filling out the length.
+            double holdProtection = DiffUtils.Smoothstep(meanHoldMs, strain_length_hold_lo, strain_length_hold_hi);
+            lengthFraction = 1.0 - (1.0 - lengthFraction) * (1.0 - holdProtection);
 
-            return 1.0 - short_map_nerf * shortness;
+            return (1.0 - strain_length_base_nerf) * (1.0 + strain_length_max * lengthFraction);
         }
 
-        private static double spikeNerf(double sustainRatio)
+        private static double jackBreadthBuff(double jackStarRating, double speedStarRating, double starRating)
         {
-            double sustain = DiffUtils.Smoothstep(sustainRatio, spike_sustain_ratio_lo, spike_sustain_ratio_hi);
-            return 1.0 - spike_damper_strength * (1.0 - sustain);
+            double jackGate = DiffUtils.Smoothstep(jackStarRating, jack_breadth_jack_lo, jack_breadth_jack_hi);
+            double speedGate = DiffUtils.Smoothstep(speedStarRating, jack_breadth_speed_lo, jack_breadth_speed_hi);
+
+            double dominance = starRating > 0.0 ? jackStarRating / starRating : 0.0;
+            double dominanceGate = DiffUtils.Smoothstep(dominance, jack_breadth_dominance_lo, jack_breadth_dominance_hi);
+
+            double highEndFade = 1.0 - DiffUtils.Smoothstep(starRating, jack_breadth_fade_lo, jack_breadth_fade_hi);
+
+            return 1.0 + jack_breadth_buff * jackGate * speedGate * dominanceGate * highEndFade;
         }
 
-        private static double computeStarRating(double totalDifficulty, double overallDifficultyMultiplier, double longNoteDamper, double shortMapMultiplier, double coordinationDifficulty)
+        private static double consistencyBonus(double sustainRatio)
         {
-            double starRating = scaleToStarRating(totalDifficulty)
-                                * overallDifficultyMultiplier
-                                * longNoteDamper
-                                * shortMapMultiplier;
-
-            if (starRating > high_end_compression_knee)
-            {
-                double coordinationGate = DiffUtils.Smoothstep(coordinationDifficulty, high_end_coordination_gate_lo, high_end_coordination_gate_hi);
-                double excessAboveKnee = starRating - high_end_compression_knee;
-                starRating = high_end_compression_knee + excessAboveKnee * (1.0 - high_end_compression_strength * coordinationGate);
-            }
-
-            return starRating;
-        }
-
-        private static double monotonicLnMultiplier(double lnKeyedMultiplier, double totalDifficulty, double tapOnlyDifficulty)
-        {
-            double lnKeyedNerf = 1.0 - lnKeyedMultiplier;
-
-            if (lnKeyedNerf <= 0.0)
-                return lnKeyedMultiplier;
-
-            double fullStarRating = scaleToStarRating(totalDifficulty);
-
-            if (fullStarRating <= 0.0)
-                return lnKeyedMultiplier;
-
-            double lnAddedFraction = Math.Max(0.0, 1.0 - scaleToStarRating(tapOnlyDifficulty) / fullStarRating);
-            return 1.0 - Math.Min(lnKeyedNerf, lnAddedFraction);
+            double consistency = DiffUtils.Smoothstep(sustainRatio, consistency_ratio_lo, consistency_ratio_hi);
+            return (1.0 - consistency_base_nerf) * (1.0 + consistency_bonus_max * consistency);
         }
 
         private static double scaleToStarRating(double aggregatedDifficulty)
@@ -277,8 +257,7 @@ namespace osu.Game.Rulesets.Mania.Difficulty
                 new Jack(mods, jackProcessor),
                 new Coordination(mods, coordinationProcessor),
                 new Release(mods, releaseProcessor),
-                new Total(mods, true, coordinationProcessor, jackProcessor, releaseProcessor, speedProcessor, technicalProcessor),
-                new Total(mods, false, coordinationProcessor, jackProcessor, releaseProcessor, speedProcessor, technicalProcessor),
+                new Total(mods, coordinationProcessor, jackProcessor, releaseProcessor, speedProcessor, technicalProcessor),
             };
         }
 
