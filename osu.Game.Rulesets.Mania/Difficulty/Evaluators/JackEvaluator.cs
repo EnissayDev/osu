@@ -73,6 +73,17 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
         private const double incidental_jack_context_lo = 0.72;
         private const double incidental_jack_context_hi = 0.90;
 
+        private const double handstream_jack_strength = 0.70;
+        private const double handstream_jack_ratio_lo = 1.7;
+        private const double handstream_jack_ratio_hi = 2.6;
+        private const double handstream_jack_cd_lo = 122.0;
+        private const double handstream_jack_cd_hi = 155.0;
+        private const double handstream_jack_stream_lo = 0.55;
+        private const double handstream_jack_stream_hi = 0.80;
+        private const double handstream_jack_pulse_lo = 44.0;
+        private const double handstream_jack_pulse_hi = 58.0;
+        private const double handstream_jack_chord_share = 0.55;
+
         public static double EvaluateDifficultyOf(ManiaDifficultyHitObject current)
         {
             var previous = (ManiaDifficultyHitObject?)current.Previous();
@@ -101,7 +112,7 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
             double baseBeforeFullRow = jackDifficulty * jack_multiplier;
             jackDifficulty *= MinijackEvaluator.EvaluateMultiplierOf(current, previous, totalColumns, columnDelta, baseBeforeFullRow);
 
-            jackDifficulty *= current.ManipulationFactor * current.StaminaFactor * SpeedjackEvaluator.EvaluateMultiplierOf(current) * AnchorEvaluator.EvaluateMultiplierOf(current);
+            jackDifficulty *= current.ManipulationFactor * current.EnduranceFactor * SpeedjackEvaluator.EvaluateMultiplierOf(current) * AnchorEvaluator.EvaluateMultiplierOf(current);
 
             jackDifficulty *= calculateSingleJackNerf(rowSize, tapRate);
             jackDifficulty *= calculateIncidentalJackNerf(current, rowSize);
@@ -169,20 +180,74 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
 
         private static double calculateIncidentalJackNerf(ManiaDifficultyHitObject current, int rowSize)
         {
-            if (rowSize >= 2)
-                return 1.0;
-
-            double rowGap = current.DeltaTime;
+            double rowGap = rowGapOf(current);
 
             if (rowGap <= 1.0)
                 return 1.0;
 
             double ratio = current.ColumnDelta / rowGap;
-            double ratioGate = DiffUtils.Smoothstep(ratio, incidental_jack_ratio_lo, incidental_jack_ratio_hi);
-            double slowGate = DiffUtils.Smoothstep(current.ColumnDelta, incidental_jack_cd_lo, incidental_jack_cd_hi);
-            double purityGate = DiffUtils.Smoothstep(singleNoteContextFraction(current), incidental_jack_context_lo, incidental_jack_context_hi);
 
-            return 1.0 - incidental_jack_nerf_strength * ratioGate * slowGate * purityGate;
+            double incidental = rowSize >= 2
+                ? 0.0
+                : DiffUtils.Smoothstep(ratio, incidental_jack_ratio_lo, incidental_jack_ratio_hi)
+                  * DiffUtils.Smoothstep(current.ColumnDelta, incidental_jack_cd_lo, incidental_jack_cd_hi)
+                  * DiffUtils.Smoothstep(singleNoteContextFraction(current), incidental_jack_context_lo, incidental_jack_context_hi);
+
+            return 1.0 - incidental_jack_nerf_strength * Math.Max(incidental, handstreamReading(current, rowSize, rowGap, ratio));
+        }
+
+        private static double handstreamReading(ManiaDifficultyHitObject current, int rowSize, double rowGap, double ratio)
+        {
+            double sizeShare = rowSize >= 2 ? handstream_jack_chord_share : 1.0;
+
+            if (sizeShare <= 0.0)
+                return 0.0;
+
+            double strideGate = DiffUtils.Smoothstep(ratio, handstream_jack_ratio_lo, handstream_jack_ratio_hi);
+            double slowGate = DiffUtils.Smoothstep(current.ColumnDelta, handstream_jack_cd_lo, handstream_jack_cd_hi);
+            double streamGate = DiffUtils.Smoothstep(streamContextFraction(current), handstream_jack_stream_lo, handstream_jack_stream_hi);
+            double pulseGate = DiffUtils.Smoothstep(rowGap, handstream_jack_pulse_lo, handstream_jack_pulse_hi);
+
+            return (handstream_jack_strength / incidental_jack_nerf_strength) * sizeShare * strideGate * slowGate * streamGate * pulseGate;
+        }
+
+        /// <summary>The gap from the previous row to this note's row, which every note of a chord shares.</summary>
+        private static double rowGapOf(ManiaDifficultyHitObject current)
+        {
+            var previousRow = current.Row?.Previous();
+            return previousRow != null ? current.Row!.StartTime - previousRow.StartTime : current.DeltaTime;
+        }
+
+        private static double streamContextFraction(ManiaDifficultyHitObject current)
+        {
+            int moved = 0;
+            int total = 0;
+
+            void accumulate(ManiaRow? row)
+            {
+                var previous = row?.Previous();
+                if (row == null || previous == null) return;
+
+                total++;
+
+                foreach (int column in row.Columns)
+                {
+                    foreach (int other in previous.Columns)
+                    {
+                        if (column == other) return;
+                    }
+                }
+
+                moved++;
+            }
+
+            ManiaRow? r = current.Row;
+            for (int i = 0; i <= incidental_jack_context_radius && r != null; i++, r = r.Previous()) accumulate(r);
+
+            r = current.Row?.Next();
+            for (int i = 0; i < incidental_jack_context_radius && r != null; i++, r = r.Next()) accumulate(r);
+
+            return total > 0 ? (double)moved / total : 0.0;
         }
 
         private static double calculateLooseJackNerf(ManiaDifficultyHitObject current, double columnDelta)
@@ -190,30 +255,23 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
             double rowGap = current.DeltaTime;
             if (rowGap <= 1.0) return 1.0;
 
-            // Only genuine same-column jacks (the repeat lands on or near the next row), not stream-induced repeats.
             double ratio = columnDelta / rowGap;
             double ratioGate = 1.0 - DiffUtils.Smoothstep(ratio, loose_jack_ratio_lo, loose_jack_ratio_hi);
             if (ratioGate <= 0.0) return 1.0;
 
-            // Slow enough to be a loose filler jack rather than a fast tapped one.
             double speedGate = DiffUtils.Smoothstep(columnDelta, loose_jack_cd_lo, loose_jack_cd_hi);
             if (speedGate <= 0.0) return 1.0;
 
-            // Rotating dense chordjacks are spared (kept chordjacks), but hammered same-chord repeats are not.
             localChordStats(current, out double chordFraction, out double repeatFraction);
             double chordSpare = DiffUtils.Smoothstep(chordFraction, loose_jack_chord_lo, loose_jack_chord_hi)
                                 * (1.0 - DiffUtils.Smoothstep(repeatFraction, loose_jack_repeat_lo, loose_jack_repeat_hi));
 
-            // Sustained anchor runs are spared: a jack that keeps repeating in one column is stamina, not filler.
+            // Sustained anchor runs should be spared in this case
             double runSpare = DiffUtils.Smoothstep(sameColumnRunLength(current), loose_jack_run_lo, loose_jack_run_hi);
 
             return 1.0 - loose_jack_strength * ratioGate * speedGate * (1.0 - chordSpare) * (1.0 - runSpare);
         }
 
-        /// <summary>
-        /// The number of consecutive hits in <paramref name="current"/>'s own column, forwards and backwards, whose
-        /// step gap stays within <see cref="loose_jack_run_window_ms"/> — i.e. how long the same-column anchor runs.
-        /// </summary>
         private static int sameColumnRunLength(ManiaDifficultyHitObject current)
         {
             int run = 1;
@@ -244,6 +302,7 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
         private static void localChordStats(ManiaDifficultyHitObject current, out double chordFraction, out double repeatFraction)
         {
             int dense = 0, repeated = 0, total = 0;
+
             void accumulate(ManiaRow? row)
             {
                 if (row == null) return;
@@ -253,6 +312,7 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
                 var previous = row.Previous();
                 if (previous != null && sameColumns(previous.Columns, row.Columns)) repeated++;
             }
+
             ManiaRow? r = current.Row;
             for (int i = 0; i <= loose_jack_chord_radius && r != null; i++, r = r.Previous()) accumulate(r);
             r = current.Row?.Next();

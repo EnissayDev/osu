@@ -29,31 +29,16 @@ namespace osu.Game.Rulesets.Mania.Difficulty
         private const double overall_multiplier = 0.360643;
         private const double power_exponent = 0.52899;
 
-        // Strain-length bonus. Every map starts nerfed by strain_length_base_nerf; the bonus then lifts it back toward its full
-        // rating in proportion to how much sustained difficulty it carries (difficulty-weighted strain count, taiko's
-        // length-bonus measure). A full-length map earns the whole bonus and lands exactly on its un-nerfed rating; a
-        // short map earns little and stays down. Long holds add content the note count can't see, so they count toward
-        // "full length".
         private const double strain_length_base_nerf = 0.195;
         private const double strain_length_full_strains = 420.0;
-        private const double strain_length_max = strain_length_base_nerf / (1.0 - strain_length_base_nerf); // restores a full-length map to exactly 1.0
+        private const double strain_length_max = strain_length_base_nerf / (1.0 - strain_length_base_nerf);
         private const double strain_length_hold_lo = 250.0;
         private const double strain_length_hold_hi = 450.0;
 
         private const double consistency_base_nerf = 0.18;
-        private const double consistency_bonus_max = consistency_base_nerf / (1.0 - consistency_base_nerf); // restores a fully consistent map to exactly 1.0
+        private const double consistency_bonus_max = consistency_base_nerf / (1.0 - consistency_base_nerf);
         private const double consistency_ratio_lo = 0.24;
         private const double consistency_ratio_hi = 0.50;
-
-        private const double jack_breadth_buff = 0.05;
-        private const double jack_breadth_jack_lo = 5.6;
-        private const double jack_breadth_jack_hi = 6.0;
-        private const double jack_breadth_speed_lo = 3.0;
-        private const double jack_breadth_speed_hi = 3.5;
-        private const double jack_breadth_dominance_lo = 0.78;
-        private const double jack_breadth_dominance_hi = 0.85;
-        private const double jack_breadth_fade_lo = 9.6;
-        private const double jack_breadth_fade_hi = 11.0;
 
         private const double od_weight = 0.188;
 
@@ -82,14 +67,7 @@ namespace osu.Game.Rulesets.Mania.Difficulty
             HitWindows hitWindows = new ManiaHitWindows();
             hitWindows.SetDifficulty(beatmap.Difficulty.OverallDifficulty);
 
-            // Hard rock and ez don't apply directly to od, so we manually scale the hit windows.
-            double windowScale = 1.0;
-            if (mods.Any(m => m is ManiaModHardRock))
-                windowScale = 1.0 / ManiaModHardRock.HIT_WINDOW_DIFFICULTY_MULTIPLIER;
-            else if (mods.Any(m => m is ManiaModEasy))
-                windowScale = 1.0 / ManiaModEasy.HIT_WINDOW_DIFFICULTY_MULTIPLIER;
-
-            double greatHitWindow = hitWindows.WindowFor(HitResult.Great) * windowScale;
+            double greatHitWindow = hitWindows.WindowFor(HitResult.Great) / hitWindowDifficultyMultiplier(beatmap);
             double odMult = hitWindowMultiplier(greatHitWindow);
 
             int totalNotes = beatmap.HitObjects.Count;
@@ -113,7 +91,6 @@ namespace osu.Game.Rulesets.Mania.Difficulty
             double starRating = scaleToStarRating(totalDifficulty * consistencyMult)
                                 * odMult
                                 * lengthBonus;
-            starRating *= jackBreadthBuff(jackStarRating, speedStarRating, starRating);
 
             return new ManiaDifficultyAttributes
             {
@@ -160,19 +137,6 @@ namespace osu.Game.Rulesets.Mania.Difficulty
             return (1.0 - strain_length_base_nerf) * (1.0 + strain_length_max * lengthFraction);
         }
 
-        private static double jackBreadthBuff(double jackStarRating, double speedStarRating, double starRating)
-        {
-            double jackGate = DiffUtils.Smoothstep(jackStarRating, jack_breadth_jack_lo, jack_breadth_jack_hi);
-            double speedGate = DiffUtils.Smoothstep(speedStarRating, jack_breadth_speed_lo, jack_breadth_speed_hi);
-
-            double dominance = starRating > 0.0 ? jackStarRating / starRating : 0.0;
-            double dominanceGate = DiffUtils.Smoothstep(dominance, jack_breadth_dominance_lo, jack_breadth_dominance_hi);
-
-            double highEndFade = 1.0 - DiffUtils.Smoothstep(starRating, jack_breadth_fade_lo, jack_breadth_fade_hi);
-
-            return 1.0 + jack_breadth_buff * jackGate * speedGate * dominanceGate * highEndFade;
-        }
-
         private static double consistencyBonus(double sustainRatio)
         {
             double consistency = DiffUtils.Smoothstep(sustainRatio, consistency_ratio_lo, consistency_ratio_hi);
@@ -185,6 +149,19 @@ namespace osu.Game.Rulesets.Mania.Difficulty
                 return 0.0;
 
             return overall_multiplier * DiffUtils.Pow(aggregatedDifficulty, power_exponent);
+        }
+
+        private static double hitWindowDifficultyMultiplier(IBeatmap beatmap)
+        {
+            foreach (var hitObject in beatmap.HitObjects)
+            {
+                var windows = hitObject is HoldNote hold ? hold.Head.HitWindows : hitObject.HitWindows;
+
+                if (windows is ManiaHitWindows maniaHitWindows)
+                    return maniaHitWindows.DifficultyMultiplier;
+            }
+
+            return 1.0;
         }
 
         private static double hitLeniency(double greatHitWindow) => 0.6 * (greatHitWindow - 90) + 90;
@@ -229,7 +206,7 @@ namespace osu.Game.Rulesets.Mania.Difficulty
             }
 
             ManiaMapData mapData = new ManiaMapData(objects.Cast<ManiaDifficultyHitObject>().ToList());
-            ManiaManipulationDifficultyPreprocessor.ProcessAndAssign(mapData, totalColumns);
+            ManiaPatternContextPreprocessor.ProcessAndAssign(mapData, totalColumns);
 
             meanManipulation = objects.Count > 0
                 ? objects.Cast<ManiaDifficultyHitObject>().Average(o => o.ManipulationFactor)

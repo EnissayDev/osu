@@ -14,6 +14,8 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Preprocessing
         public IReadOnlyList<ManiaRow> Rows => rows;
         private readonly List<ManiaRow> rows = new List<ManiaRow>();
 
+        public ManiaRow? RowAt(int index) => index >= 0 && index < rows.Count ? rows[index] : null;
+
         public ManiaMapData(IReadOnlyList<ManiaDifficultyHitObject> objects)
         {
             groupIntoRows(objects);

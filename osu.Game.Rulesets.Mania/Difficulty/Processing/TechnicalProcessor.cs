@@ -2,7 +2,6 @@
 // See the LICENCE file in the repository root for full licence text.
 
 using System.Collections.Generic;
-using System.Linq;
 using osu.Game.Rulesets.Difficulty.Preprocessing;
 using osu.Game.Rulesets.Difficulty.Utils;
 using osu.Game.Rulesets.Mania.Difficulty.Evaluators;
@@ -24,6 +23,7 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Processing
         private double irregularitySum;
 
         private readonly Queue<(int rhythmClass, int direction)> recentShapes = new Queue<(int, int)>();
+        private readonly (int rhythmClass, int direction)[] shapeBuffer = new (int, int)[variety_window];
 
         private double previousDeltaTime = -1.0;
 
@@ -60,7 +60,34 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Processing
             while (recentShapes.Count > variety_window)
                 recentShapes.Dequeue();
 
-            return TechnicalEvaluator.EvaluatePatternVarietyOf(recentShapes.Distinct().Count());
+            return TechnicalEvaluator.EvaluatePatternVarietyOf(distinctShapeCount());
+        }
+
+        private int distinctShapeCount()
+        {
+            recentShapes.CopyTo(shapeBuffer, 0);
+
+            int count = recentShapes.Count;
+            int distinct = 0;
+
+            for (int i = 0; i < count; i++)
+            {
+                bool seen = false;
+
+                for (int j = 0; j < i; j++)
+                {
+                    if (shapeBuffer[j] == shapeBuffer[i])
+                    {
+                        seen = true;
+                        break;
+                    }
+                }
+
+                if (!seen)
+                    distinct++;
+            }
+
+            return distinct;
         }
     }
 }

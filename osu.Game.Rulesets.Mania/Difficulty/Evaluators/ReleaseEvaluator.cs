@@ -16,8 +16,8 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
         private const double long_note_gate_midpoint_ms = 110.90068;
         private const double long_note_gate_slope = 0.07;
 
-        private const double long_note_base_load = 0.42;
-        private const double long_note_duration_load = 0.90;
+        private const double long_note_base_load = 0.42; // WAS 0.2
+        private const double long_note_duration_load = 0.9; // WAS 1.10
 
         private const double long_hold_buff = 1.6;
         private const double long_hold_gate_lo_ms = 500.0;

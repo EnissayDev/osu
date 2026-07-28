@@ -38,7 +38,7 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
             coordinationDifficulty += calculateChordDifficulty(current, depthInChord, columnDelta);
             coordinationDifficulty += calculateHoldDifficulty(current);
 
-            coordinationDifficulty *= current.ManipulationFactor * current.StaminaFactor;
+            coordinationDifficulty *= current.ManipulationFactor * current.EnduranceFactor;
 
             return saturate(coordinationDifficulty * total_weight);
         }
@@ -64,18 +64,18 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
 
             // If we have a left column
             if (column > 0)
-                total += columnBoundaryPressure(current, column, "left", totalColumns);
+                total += columnBoundaryPressure(current, column, left: true, totalColumns);
 
             // If we have a right column
             if (column < totalColumns - 1)
-                total += columnBoundaryPressure(current, column, "right", totalColumns);
+                total += columnBoundaryPressure(current, column, left: false, totalColumns);
 
             return total * TrillUtils.TrillFactor(current) * boundary_pressure_weight;
         }
 
-        private static double columnBoundaryPressure(ManiaDifficultyHitObject current, int column, string side, int totalColumns)
+        private static double columnBoundaryPressure(ManiaDifficultyHitObject current, int column, bool left, int totalColumns)
         {
-            int adjacentColumn = side == "left" ? column - 1 : column + 1;
+            int adjacentColumn = left ? column - 1 : column + 1;
             double adjacentStartTime = current.LastStartTimeInColumn(adjacentColumn);
 
             if (double.IsNegativeInfinity(adjacentStartTime))
@@ -87,7 +87,7 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
                 return 0.0;
 
             // Since boundaries are between the columns, the left side boundary is also at index column.
-            int boundaryIndex = side == "left" ? column : column + 1;
+            int boundaryIndex = left ? column : column + 1;
 
             double intensity = boundary_scale_ms / (adjacentDelta + boundary_min_delta_ms);
             double coefficient = CrossColumnUtils.ColumnBoundaryMultiplier(boundaryIndex, totalColumns);

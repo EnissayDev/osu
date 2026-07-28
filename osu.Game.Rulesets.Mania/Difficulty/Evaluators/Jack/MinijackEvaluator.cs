@@ -35,8 +35,8 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators.Jack
         private const double minijack_strain_damp = 0.9;
         private const double minijack_strain_lo = 12.0;
         private const double minijack_strain_hi = 15.0;
-        private const double minijack_strain_density_lo = 2.0;
-        private const double minijack_strain_density_hi = 2.4;
+        private const double minijack_strain_density_lo = 1.6;
+        private const double minijack_strain_density_hi = 2.0;
 
         public static double EvaluateMultiplierOf(ManiaDifficultyHitObject current, ManiaDifficultyHitObject? previous, int totalColumns, double columnDelta, double baseStrain)
         {
@@ -87,7 +87,6 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators.Jack
 
             double localSize = localChordSize(current);
 
-            // Taper the buff on dense chord-jack (already rewarded by the chord-jack bonus).
             double sizeDampen = 1.0 - DiffUtils.Smoothstep(localSize, minijack_size_taper_lo, minijack_size_taper_hi);
 
             double strainDensityGate = DiffUtils.Smoothstep(localSize, minijack_strain_density_lo, minijack_strain_density_hi);
@@ -95,7 +94,6 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators.Jack
 
             return 1.0 + minijack_buff * speedGate * manipGate * runGate * recurGate * sizeDampen * strainDampen;
         }
-
 
         private static double localChordSize(ManiaDifficultyHitObject current)
         {

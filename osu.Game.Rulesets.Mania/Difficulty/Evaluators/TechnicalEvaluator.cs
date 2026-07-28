@@ -67,7 +67,7 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
             double complexity = Math.Max(rhythmIrregularity + columnComplexity, variety_floor * patternVariety);
             double rhythmAmplifier = 1.0 + rhythm_tech_buff * DiffUtils.BellCurve(windowedIrregularity, rhythm_tech_center, rhythm_tech_width);
 
-            return pattern_buff * complexity * speedFactor * technical_scale * rhythmAmplifier * hitObject.ManipulationFactor * hitObject.StaminaFactor * total_weight;
+            return pattern_buff * complexity * speedFactor * technical_scale * rhythmAmplifier * hitObject.ManipulationFactor * total_weight;
         }
 
         private static double evaluateColumnComplexityOf(ManiaDifficultyHitObject hitObject)

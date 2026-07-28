@@ -2,7 +2,6 @@
 // See the LICENCE file in the repository root for full licence text.
 
 using System.Collections.Generic;
-using System.Linq;
 using osu.Game.Rulesets.Mania.Difficulty.Utils;
 
 namespace osu.Game.Rulesets.Mania.Difficulty.Preprocessing.Patterning
@@ -43,8 +42,8 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Preprocessing.Patterning
 
         public bool IsJump => Size == 2;
 
-        public ManiaRow? Next(int offset = 0) => mapData.Rows.ElementAtOrDefault(RowIndex + (offset + 1));
-        public ManiaRow? Previous(int offset = 0) => mapData.Rows.ElementAtOrDefault(RowIndex - (offset + 1));
+        public ManiaRow? Next(int offset = 0) => mapData.RowAt(RowIndex + (offset + 1));
+        public ManiaRow? Previous(int offset = 0) => mapData.RowAt(RowIndex - (offset + 1));
 
         public bool IsSameRow(ManiaRow other) => RowIndex == other.RowIndex;
     }
