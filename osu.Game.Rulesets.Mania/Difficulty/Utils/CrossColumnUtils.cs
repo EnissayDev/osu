@@ -5,14 +5,9 @@ using System;
 
 namespace osu.Game.Rulesets.Mania.Difficulty.Utils
 {
-    /// <summary>
-    /// Evaluates the cross-hand coefficients that determine how much cross-column difficulty
-    /// each column boundary contributes based on the total key count.
-    /// These values are tuned based on typical finger layouts and hand coordination.
-    /// </summary>
     public static class CrossColumnUtils
     {
-        // Pre-calculated multipliers for the boundaries between columns for different key counts (1K to 10K).
+        // Multipliers for the boundaries between columns, for key counts 1K to 10K.
         private static readonly double[][] boundary_multipliers_per_column =
         {
             new[] { 0.075, 0.075 }, // 1K

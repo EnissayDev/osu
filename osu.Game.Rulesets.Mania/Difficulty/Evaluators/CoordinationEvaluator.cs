@@ -1,4 +1,4 @@
-// Copyright (c) ppy Pty Ltd <contact@ppy.sh>. Licensed under the MIT Licence.
+﻿// Copyright (c) ppy Pty Ltd <contact@ppy.sh>. Licensed under the MIT Licence.
 // See the LICENCE file in the repository root for full licence text.
 
 using System;
@@ -12,8 +12,6 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
         private const double boundary_pressure_weight = 1.14529;
 
         private const double chord_load_per_extra_column = 0.9;
-        private const double chordjack_nerf = 0.45397;
-        private const double chord_speed_threshold_ms = 140.625;
 
         private const double held_long_note_weight = 0.01003;
         private const double held_speed_factor_offset = 0.08;
@@ -52,21 +50,16 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
 
         /// <summary>
         /// Calculates the difficulty of both column boundaries for this column, with a boundary being the hypothetical "middle" of two columns.
-        /// In simple words, calculates how hard it is to tap with two adjacent fingers.
         /// </summary>
-        /// <param name="current">The note to calculate for.</param>
-        /// <returns>A base difficulty value.</returns>
         private static double calculateBoundaryPressure(ManiaDifficultyHitObject current)
         {
             int column = current.Column;
-            int totalColumns = current.PreviousHitObjects.Length;
+            int totalColumns = current.Row.TotalColumns;
             double total = 0.0;
 
-            // If we have a left column
             if (column > 0)
                 total += columnBoundaryPressure(current, column, left: true, totalColumns);
 
-            // If we have a right column
             if (column < totalColumns - 1)
                 total += columnBoundaryPressure(current, column, left: false, totalColumns);
 
@@ -86,7 +79,7 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
             if (adjacentDelta < ChordUtils.CHORD_TOLERANCE_MS)
                 return 0.0;
 
-            // Since boundaries are between the columns, the left side boundary is also at index column.
+            // Boundaries sit between columns, so the left side boundary shares this column's index.
             int boundaryIndex = left ? column : column + 1;
 
             double intensity = boundary_scale_ms / (adjacentDelta + boundary_min_delta_ms);
@@ -98,29 +91,22 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
 
         private static double calculateChordDifficulty(ManiaDifficultyHitObject current, int depthInChord, double columnDelta)
         {
-            bool isChordjack = depthInChord >= 2 && columnDelta <= JackEvaluator.JACK_WINDOW_MS;
-            double chordSpeedFactor = !double.IsPositiveInfinity(columnDelta)
-                ? Math.Clamp(chord_speed_threshold_ms / columnDelta, 0.1, 2.0)
-                : 1.0;
+            if (depthInChord < 2)
+                return 0.0;
 
-            // A chordjack repeats a chord on columns it just used (e.g. 4-2-2-4), already paid for by Jack,
-            // so the dampening here only targets degenerate sustained full/near-full chord spam.
-            double chordLoad = depthInChord >= 2
-                ? chord_load_per_extra_column * (depthInChord - 1) * ChordUtils.FullChordDampen(current, current.PreviousHitObjects.Length, columnDelta)
-                  * ChordUtils.NearFullChordDampen(current, current.PreviousHitObjects.Length, columnDelta)
-                  * (isChordjack ? chordjack_nerf : 1.0) * chordSpeedFactor
-                : 0.0;
+            // Chordjacks are already paid for by Jack, so the dampening here only targets sustained chord spam.
+            bool isChordjack = columnDelta <= JackEvaluator.JACK_WINDOW_MS;
 
-            return chordLoad;
+            return chord_load_per_extra_column * (depthInChord - 1) * ChordUtils.ChordRepeatDampen(current, columnDelta)
+                   * (isChordjack ? ChordUtils.CHORDJACK_NERF : 1.0) * ChordUtils.ChordSpeedFactor(columnDelta);
         }
 
         private static double calculateHoldDifficulty(ManiaDifficultyHitObject current)
         {
             int heldColumns = current.ConcurrentlyHeldColumns(ChordUtils.CHORD_TOLERANCE_MS);
             double heldSpeedFactor = current.DeltaTime >= ChordUtils.CHORD_TOLERANCE_MS ? 1.0 / (current.DeltaTime / 1000.0 + held_speed_factor_offset) : 1.0;
-            double heldNoteLoad = held_long_note_weight * Math.Sqrt(heldColumns) * heldSpeedFactor;
 
-            return heldNoteLoad;
+            return held_long_note_weight * Math.Sqrt(heldColumns) * heldSpeedFactor;
         }
     }
 }

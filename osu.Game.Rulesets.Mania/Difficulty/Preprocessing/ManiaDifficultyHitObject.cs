@@ -20,15 +20,13 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Preprocessing
 
         public readonly int Column;
 
-        // The hit object earlier in time than this note in each column
+        /// <summary>
+        /// The hit object earlier in time than this note in each column.
+        /// </summary>
         public readonly ManiaDifficultyHitObject?[] PreviousHitObjects;
 
         public readonly double ColumnDelta;
 
-        /// <summary>
-        /// The row of notes (often a chord) that contains this note.
-        /// Subject to a grace period, so notes can belong to the same row even if they are slightly offset in time.
-        /// </summary>
         public ManiaRow Row = null!;
 
         public double ManipulationFactor = 1.0;
@@ -52,7 +50,7 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Preprocessing
                 for (int i = 0; i < prevNote.PreviousHitObjects.Length; i++)
                     PreviousHitObjects[i] = prevNote.PreviousHitObjects[i];
 
-                // intentionally depends on processing order to match live.
+                // Intentionally depends on processing order to match live.
                 PreviousHitObjects[prevNote.Column] = prevNote;
             }
         }
@@ -90,7 +88,7 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Preprocessing
         public double LastEndTimeInColumn(int column) => PreviousHitObjects[column]?.EndTime ?? double.NegativeInfinity;
 
         /// <summary>
-        /// The number of columns, other than this object's own, that are currently held (i.e. a long note is sustaining through this object's <see cref="DifficultyHitObject.StartTime"/>).
+        /// The number of columns, other than this object's own, that are currently held.
         /// </summary>
         /// <param name="chordTolerance">The time window within which two notes are considered to start simultaneously.</param>
         public int ConcurrentlyHeldColumns(double chordTolerance)

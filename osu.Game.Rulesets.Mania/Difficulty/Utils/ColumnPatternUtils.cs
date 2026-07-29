@@ -5,9 +5,6 @@ using System;
 
 namespace osu.Game.Rulesets.Mania.Difficulty.Utils
 {
-    /// <summary>
-    /// Helpers that compare the column-sets of two rows, used to recognise repeats, rolls and shared jacks.
-    /// </summary>
     public static class ColumnPatternUtils
     {
         /// <summary>
@@ -47,6 +44,19 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Utils
 
             return false;
         }
+
+        /// <summary>
+        /// Whether <paramref name="to"/> is <paramref name="from"/> moved wholesale onto adjacent columns, as a
+        /// roll steps a shape sideways.
+        /// </summary>
+        public static bool IsRoll(int[] from, int[] to) => ColumnShift(from, to) != 0;
+
+        /// <summary>
+        /// Whether <paramref name="last"/> comes back to the columns of <paramref name="first"/> while
+        /// <paramref name="between"/> leaves them, the alternation a jumptrill is built from.
+        /// </summary>
+        public static bool IsRecurrence(int[] first, int[] between, int[] last)
+            => SameColumns(last, first) && !SameColumns(last, between);
 
         /// <summary>
         /// If <paramref name="b"/> is <paramref name="a"/> with every column shifted by the same constant

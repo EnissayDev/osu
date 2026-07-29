@@ -1,8 +1,6 @@
 // Copyright (c) ppy Pty Ltd <contact@ppy.sh>. Licensed under the MIT Licence.
 // See the LICENCE file in the repository root for full licence text.
 
-using System;
-using osu.Game.Rulesets.Difficulty.Utils;
 using osu.Game.Rulesets.Mania.Difficulty.Preprocessing;
 
 namespace osu.Game.Rulesets.Mania.Difficulty.Utils
@@ -13,7 +11,7 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Utils
         private const double trill_run_ramp = 4.99947;
 
         /// <summary>
-        /// Whether <paramref name="hitObject"/> alternates back into the column it was in two notes ago (e.g. a 1-2-1 pattern).
+        /// Whether <paramref name="hitObject"/> alternates back into the column it was in two notes ago (1-2-1 pattern).
         /// </summary>
         public static bool IsTrillStep(ManiaDifficultyHitObject hitObject)
         {
@@ -25,15 +23,14 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Utils
         }
 
         /// <summary>
-        /// A multiplier that nerfs sustained trill runs, ramping down the longer the trill continues.
+        /// Nerfs sustained trill runs, ramping down the longer the trill continues.
         /// </summary>
         public static double TrillFactor(ManiaDifficultyHitObject current)
         {
             if (!IsTrillStep(current))
                 return 1.0;
 
-            double ramp = Math.Max(1.0, trill_run_ramp);
-            int cap = (int)Math.Ceiling(ramp) + 1;
+            int cap = RunDampenUtils.CapFor(trill_run_ramp);
             int run = 1;
             var trillStep = current;
 
@@ -46,8 +43,8 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Utils
                 trillStep = previousNote;
             }
 
-            double t = DiffUtils.ReverseLerp(run - 1, 0.0, ramp);
-            return 1.0 - (1.0 - trill_nerf) * t;
+            // trill_nerf is the floor the multiplier eases down to, so the ramped depth is what is left above it.
+            return RunDampenUtils.Dampen(run, trill_run_ramp, 1.0 - trill_nerf);
         }
     }
 }

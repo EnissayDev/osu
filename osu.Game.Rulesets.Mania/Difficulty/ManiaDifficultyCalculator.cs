@@ -44,6 +44,8 @@ namespace osu.Game.Rulesets.Mania.Difficulty
 
         private readonly bool isForCurrentRuleset;
 
+        private double meanManipulation = 1.0;
+
         public override int Version => 20241007;
 
         public ManiaDifficultyCalculator(IRulesetInfo ruleset, IWorkingBeatmap beatmap)
@@ -130,7 +132,7 @@ namespace osu.Game.Rulesets.Mania.Difficulty
         {
             double lengthFraction = Math.Clamp(difficultStrains / strain_length_full_strains, 0.0, 1.0);
 
-            // Long holds add sustained content the note count can't see, so treat them as filling out the length.
+            // Long holds add sustained content the note count can't see, so they fill out the length too.
             double holdProtection = DiffUtils.Smoothstep(meanHoldMs, strain_length_hold_lo, strain_length_hold_hi);
             lengthFraction = 1.0 - (1.0 - lengthFraction) * (1.0 - holdProtection);
 
@@ -170,7 +172,7 @@ namespace osu.Game.Rulesets.Mania.Difficulty
         {
             const double od8_great_window = 40.0;
 
-            // Our hit window multiplier is scaled around a base value of od8 (40ms)
+            // The multiplier is scaled around a base value of OD8 (40ms).
             double raw = hitLeniency(od8_great_window) / hitLeniency(greatHitWindow);
             return 1.0 + od_weight * (raw - 1.0);
         }
@@ -205,8 +207,8 @@ namespace osu.Game.Rulesets.Mania.Difficulty
                 perColumnObjects[currentObject.Column].Add(currentObject);
             }
 
-            ManiaMapData mapData = new ManiaMapData(objects.Cast<ManiaDifficultyHitObject>().ToList());
-            ManiaPatternContextPreprocessor.ProcessAndAssign(mapData, totalColumns);
+            ManiaMapData mapData = new ManiaMapData(objects.Cast<ManiaDifficultyHitObject>().ToList(), totalColumns);
+            ManiaPatternContextPreprocessor.ProcessAndAssign(mapData);
 
             meanManipulation = objects.Count > 0
                 ? objects.Cast<ManiaDifficultyHitObject>().Average(o => o.ManipulationFactor)
@@ -214,8 +216,6 @@ namespace osu.Game.Rulesets.Mania.Difficulty
 
             return objects;
         }
-
-        private double meanManipulation = 1.0;
 
         protected override IEnumerable<DifficultyHitObject> SortObjects(IEnumerable<DifficultyHitObject> input) => input;
 

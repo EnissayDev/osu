@@ -4,7 +4,6 @@
 using System;
 using osu.Game.Rulesets.Difficulty.Utils;
 using osu.Game.Rulesets.Mania.Difficulty.Preprocessing;
-using osu.Game.Rulesets.Mania.Difficulty.Preprocessing.Patterning;
 
 namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators.Jack
 {
@@ -17,21 +16,12 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators.Jack
 
         public static double EvaluateMultiplierOf(ManiaDifficultyHitObject current)
         {
-            int totalColumns = current.PreviousHitObjects.Length;
+            int totalColumns = current.Row.TotalColumns;
 
             if (totalColumns < 2)
                 return 1.0;
 
-            double[] usage = new double[totalColumns];
-            double center = current.StartTime;
-
-            addRowUsage(current.Row, usage, center);
-
-            for (ManiaRow? row = current.Row.Previous(); row != null && center - row.StartTime <= anchor_window_ms; row = row.Previous())
-                addRowUsage(row, usage, center);
-
-            for (ManiaRow? row = current.Row.Next(); row != null && row.StartTime - center <= anchor_window_ms; row = row.Next())
-                addRowUsage(row, usage, center);
+            double[] usage = columnUsage(current, totalColumns);
 
             Array.Sort(usage);
             Array.Reverse(usage);
@@ -60,19 +50,30 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators.Jack
             return 1.0 + anchor_buff * DiffUtils.Smoothstep(anchorValue, anchor_gate_lo, anchor_gate_hi);
         }
 
-        private static void addRowUsage(ManiaRow row, double[] usage, double center)
+        /// <summary>
+        /// How much each column is pressed around <paramref name="current"/>, with nearby rows counting for more.
+        /// </summary>
+        private static double[] columnUsage(ManiaDifficultyHitObject current, int totalColumns)
         {
-            double distance = Math.Abs(row.StartTime - center) / anchor_window_ms;
-            double weight = 1.0 - distance * distance;
+            double[] usage = new double[totalColumns];
+            double center = current.StartTime;
 
-            if (weight <= 0.0)
-                return;
-
-            foreach (int column in row.Columns)
+            foreach (var row in current.Row.RowsWithin(anchor_window_ms, center))
             {
-                if (column >= 0 && column < usage.Length)
-                    usage[column] += weight;
+                double distance = Math.Abs(row.StartTime - center) / anchor_window_ms;
+                double weight = 1.0 - distance * distance;
+
+                if (weight <= 0.0)
+                    continue;
+
+                foreach (int column in row.Columns)
+                {
+                    if (column >= 0 && column < totalColumns)
+                        usage[column] += weight;
+                }
             }
+
+            return usage;
         }
     }
 }

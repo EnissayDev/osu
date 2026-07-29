@@ -26,14 +26,13 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators.Jack
             if (previous == null || previous2 == null)
                 return 1.0;
 
-            double timeSincePreviousRow = row.StartTime - previous.StartTime;
-            double speedScale = DiffUtils.Smoothstep(speedjack_speed_hi_ms - timeSincePreviousRow, 0.0, speedjack_speed_hi_ms - speedjack_speed_lo_ms);
+            double speedScale = DiffUtils.Smoothstep(speedjack_speed_hi_ms - row.GapBefore, 0.0, speedjack_speed_hi_ms - speedjack_speed_lo_ms);
 
             if (speedScale <= 0.0)
                 return 1.0;
 
             bool isFullRepeat = ColumnPatternUtils.SameColumns(row.Columns, previous.Columns) || ColumnPatternUtils.SameColumns(row.Columns, previous2.Columns);
-            bool isRoll = ColumnPatternUtils.ColumnShift(previous.Columns, row.Columns) != 0;
+            bool isRoll = ColumnPatternUtils.IsRoll(previous.Columns, row.Columns);
             bool sharesJack = ColumnPatternUtils.SharesColumn(row.Columns, previous.Columns) || ColumnPatternUtils.SharesColumn(row.Columns, previous2.Columns);
 
             if (isFullRepeat || isRoll || !sharesJack)
@@ -66,11 +65,11 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators.Jack
                 if (previous == null || previous2 == null)
                     continue;
 
-                if (current.StartTime - previous.StartTime > speedjack_speed_hi_ms)
+                if (current.GapBefore > speedjack_speed_hi_ms)
                     continue;
 
-                bool isJumptrill = ColumnPatternUtils.SameColumns(current.Columns, previous2.Columns) && !ColumnPatternUtils.SameColumns(current.Columns, previous.Columns);
-                bool isRoll = ColumnPatternUtils.ColumnShift(previous.Columns, current.Columns) != 0;
+                bool isJumptrill = ColumnPatternUtils.IsRecurrence(previous2.Columns, previous.Columns, current.Columns);
+                bool isRoll = ColumnPatternUtils.IsRoll(previous.Columns, current.Columns);
 
                 if (isJumptrill || isRoll)
                     manipulable++;

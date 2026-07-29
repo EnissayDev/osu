@@ -4,7 +4,6 @@
 using System;
 using osu.Game.Rulesets.Difficulty.Utils;
 using osu.Game.Rulesets.Mania.Difficulty.Preprocessing;
-using osu.Game.Rulesets.Mania.Difficulty.Preprocessing.Patterning;
 using osu.Game.Rulesets.Mania.Difficulty.Utils;
 
 namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators.Jack
@@ -54,33 +53,7 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators.Jack
             double manipGate = DiffUtils.ReverseLerp(current.ManipulationFactor, minijack_manip_lo, minijack_manip_hi);
 
             double runWindow = minijack_run_window_scale * columnDelta;
-
-            int runLength = 1;
-            ManiaDifficultyHitObject note = current;
-
-            for (int back = 0; back < minijack_scan_limit; back++)
-            {
-                var prevInColumn = current.PrevInColumn(back);
-
-                if (prevInColumn == null || note.StartTime - prevInColumn.StartTime > runWindow)
-                    break;
-
-                runLength++;
-                note = prevInColumn;
-            }
-
-            note = current;
-
-            for (int forward = 0; forward < minijack_scan_limit; forward++)
-            {
-                var nextInColumn = current.NextInColumn(forward);
-
-                if (nextInColumn == null || nextInColumn.StartTime - note.StartTime > runWindow)
-                    break;
-
-                runLength++;
-                note = nextInColumn;
-            }
+            int runLength = ColumnRunUtils.RunLengthAround(current, runWindow, minijack_scan_limit);
 
             double runGate = 1.0 - DiffUtils.Smoothstep(runLength, minijack_run_gate_lo, minijack_run_gate_hi);
             double recurGate = fullChordRecurGate(current, fullChord, columnDelta);
@@ -95,29 +68,11 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators.Jack
             return 1.0 + minijack_buff * speedGate * manipGate * runGate * recurGate * sizeDampen * strainDampen;
         }
 
+        /// <summary>
+        /// The average notes per row over the rows surrounding <paramref name="current"/>.
+        /// </summary>
         private static double localChordSize(ManiaDifficultyHitObject current)
-        {
-            double sum = current.Row.Size;
-            int count = 1;
-
-            ManiaRow? row = current.Row.Previous();
-
-            for (int i = 0; i < minijack_size_radius && row != null; i++, row = row.Previous())
-            {
-                sum += row.Size;
-                count++;
-            }
-
-            row = current.Row.Next();
-
-            for (int i = 0; i < minijack_size_radius && row != null; i++, row = row.Next())
-            {
-                sum += row.Size;
-                count++;
-            }
-
-            return sum / count;
-        }
+            => current.Row.AverageOfRowsAround(minijack_size_radius, row => row.Size);
 
         private static double fullChordRecurGate(ManiaDifficultyHitObject current, int fullChord, double columnDelta)
         {

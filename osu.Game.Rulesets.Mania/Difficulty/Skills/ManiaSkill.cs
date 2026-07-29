@@ -18,6 +18,8 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Skills
 
         private readonly List<double> sortedDifficulties;
 
+        private bool isSorted;
+
         protected int BaseNoteCount { get; private set; }
 
         protected ManiaSkill(Mod[] mods)
@@ -34,7 +36,10 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Skills
             double difficulty = DifficultyAt(current);
 
             if (difficulty > 0)
+            {
                 sortedDifficulties.Add(difficulty);
+                isSorted = false;
+            }
 
             return difficulty;
         }
@@ -63,7 +68,7 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Skills
             if (sortedDifficulties.Count == 0)
                 return 1.0;
 
-            sortedDifficulties.Sort();
+            sortDifficulties();
 
             double median = strainAtPercentile(0.50);
             double high = strainAtPercentile(0.90);
@@ -76,7 +81,7 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Skills
             if (sortedDifficulties.Count == 0)
                 return 0.0;
 
-            sortedDifficulties.Sort();
+            sortDifficulties();
 
             double top = strainAtPercentile(0.93);
 
@@ -86,11 +91,26 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Skills
             return sortedDifficulties.Sum(s => DiffUtils.Logistic(s / top, 0.88, 10.0, 1.1));
         }
 
-        private double strainAtPercentile(double percentile)
+        /// <summary>
+        /// Sorts the recorded difficulties, which every reader below needs and none of them change.
+        /// </summary>
+        private void sortDifficulties()
         {
-            int maxIndex = sortedDifficulties.Count - 1;
+            if (isSorted)
+                return;
+
+            sortedDifficulties.Sort();
+            isSorted = true;
+        }
+
+        private double strainAtPercentile(double percentile) => valueAtPercentile(sortedDifficulties, percentile);
+
+        private static double valueAtPercentile(List<double> sortedValues, double percentile)
+        {
+            int maxIndex = sortedValues.Count - 1;
             int index = Math.Clamp((int)Math.Round(maxIndex * percentile), 0, maxIndex);
-            return sortedDifficulties[index];
+
+            return sortedValues[index];
         }
 
         public override double DifficultyValue()
@@ -98,7 +118,7 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Skills
             if (sortedDifficulties.Count == 0)
                 return 0.0;
 
-            sortedDifficulties.Sort();
+            sortDifficulties();
 
             const int power_mean_exponent = 5;
 
@@ -128,20 +148,14 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Skills
         }
 
         /// <summary>
-        /// Calculates the mean of specific percentile values from a sorted array.
+        /// Calculates the mean of specific percentile positions of <paramref name="sortedValues"/>.
         /// </summary>
-        /// <param name="sortedValues">Array of difficulty values, sorted ascending.</param>
-        /// <param name="percentiles">Array of percentile positions (0.0 to 1.0).</param>
         private static double calculatePercentileMean(List<double> sortedValues, double[] percentiles)
         {
-            int maxIndex = sortedValues.Count - 1;
             double sum = 0.0;
 
             foreach (double percentile in percentiles)
-            {
-                int index = Math.Clamp((int)Math.Round(maxIndex * percentile), 0, maxIndex);
-                sum += sortedValues[index];
-            }
+                sum += valueAtPercentile(sortedValues, percentile);
 
             return sum / percentiles.Length;
         }

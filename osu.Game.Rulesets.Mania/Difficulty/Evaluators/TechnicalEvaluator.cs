@@ -46,9 +46,6 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
             return 1.0 - ratio;
         }
 
-        /// <summary>
-        /// The (rhythm class, movement direction) shape of this note, used by the pattern-variety window.
-        /// </summary>
         public static (int rhythmClass, int direction) EvaluateShapeOf(ManiaDifficultyHitObject hitObject)
         {
             int rhythmClass = (int)Math.Round(Math.Log(hitObject.DeltaTime) / Math.Log(variety_gap_log_base));
@@ -82,14 +79,15 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
 
             if (previousDirection != 0 && currentDirection != 0 && Math.Sign(previousDirection) != Math.Sign(currentDirection))
             {
-                double coefficient = CrossColumnUtils.SumBoundaryMultipliersBetween(previous.Column, hitObject.Column, hitObject.PreviousHitObjects.Length);
+                double coefficient = CrossColumnUtils.SumBoundaryMultipliersBetween(previous.Column, hitObject.Column, hitObject.Row.TotalColumns);
                 columnComplexity += reversal_base_complexity + reversal_coefficient_multiplier * coefficient;
             }
 
             if (Math.Abs(currentDirection) >= 2)
-                columnComplexity += CrossColumnUtils.AverageBoundaryMultipliersBetween(previous.Column, hitObject.Column, hitObject.PreviousHitObjects.Length); // wide jump, averaged path scaled by sqrt(span)
+                columnComplexity += CrossColumnUtils.AverageBoundaryMultipliersBetween(previous.Column, hitObject.Column, hitObject.Row.TotalColumns);
 
             double spanDamper = 1.0 - wide_jump_nerf * DiffUtils.Smoothstep(Math.Abs(currentDirection), wide_jump_span_lo, wide_jump_span_hi);
+
             return columnComplexity * spanDamper;
         }
     }
