@@ -7,6 +7,7 @@ using System.Linq;
 using osu.Game.Rulesets.Difficulty.Preprocessing;
 using osu.Game.Rulesets.Difficulty.Skills;
 using osu.Game.Rulesets.Difficulty.Utils;
+using osu.Game.Rulesets.Mania.Difficulty.Utils;
 using osu.Game.Rulesets.Mania.Objects;
 using osu.Game.Rulesets.Mods;
 
@@ -14,44 +15,49 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Skills
 {
     public abstract class ManiaSkill : Skill
     {
+        private const double star_rating_accuracy = 0.965;
+
+        private const int binning_note_threshold = 64;
+
+        private readonly List<double> sortedDifficulties = new List<double>();
+        private readonly List<AccuracyDifficulties> accuracyDifficulties = new List<AccuracyDifficulties>();
+        private readonly BinnedDifficulties binnedDifficulties = new BinnedDifficulties();
+
         private double totalNoteWeight;
-
-        private readonly List<double> sortedDifficulties;
-
         private bool isSorted;
-
-        protected int BaseNoteCount { get; private set; }
 
         protected ManiaSkill(Mod[] mods)
             : base(mods)
         {
-            sortedDifficulties = new List<double>();
         }
 
         protected override double ProcessInternal(DifficultyHitObject current)
         {
-            BaseNoteCount++;
             totalNoteWeight += getNoteWeight(current);
 
-            double difficulty = DifficultyAt(current);
+            AccuracyDifficulties difficulties = AccuracyDifficultiesAt(current);
 
-            if (difficulty > 0)
+            if (difficulties.BaseDifficulty > 0)
             {
-                sortedDifficulties.Add(difficulty);
+                sortedDifficulties.Add(difficulties.BaseDifficulty);
                 isSorted = false;
             }
 
-            return difficulty;
+            accuracyDifficulties.Add(difficulties);
+            binnedDifficulties.Add(difficulties);
+
+            return difficulties.BaseDifficulty;
         }
 
-        private double getNoteWeight(DifficultyHitObject current)
+        protected abstract AccuracyDifficulties AccuracyDifficultiesAt(DifficultyHitObject current);
+
+        private static double getNoteWeight(DifficultyHitObject current)
         {
             const double max_long_note_weight_duration_ms = 1000.0;
             const double long_note_weight_per_200_ms = 0.6;
 
             double noteWeight = 1;
 
-            // Add additional weight for hold notes, depending on their length.
             if (current.BaseObject is HoldNote holdNote)
             {
                 double duration = Math.Min(holdNote.EndTime - holdNote.StartTime, max_long_note_weight_duration_ms);
@@ -60,8 +66,6 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Skills
 
             return noteWeight;
         }
-
-        protected abstract double DifficultyAt(DifficultyHitObject current);
 
         public double SustainRatio()
         {
@@ -91,6 +95,79 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Skills
             return sortedDifficulties.Sum(s => DiffUtils.Logistic(s / top, 0.88, 10.0, 1.1));
         }
 
+        public override double DifficultyValue() => DifficultyValueAtAccuracy(star_rating_accuracy);
+
+        public double DifficultyValueAtAccuracy(double accuracy)
+        {
+            if (accuracyDifficulties.Count == 0 || accuracy <= AccuracyValueMultipliers.ACCURACY_VALUES[^1])
+                return 0.0;
+
+            double rawDifficulty = RootFinding.FindRootExpand(skill => AccuracyAtSkill(skill) - accuracy, 0, 10);
+
+            const double note_count_offset = 34.64147;
+
+            return rawDifficulty * (totalNoteWeight / (totalNoteWeight + note_count_offset));
+        }
+
+        public double AccuracyAtSkill(double skill)
+        {
+            if (skill == 0)
+                return 0.0;
+
+            return accuracyDifficulties.Count > binning_note_threshold ? accuracyAtSkillBinned(skill) : AccuracyAtSkillExact(skill);
+        }
+
+        public double AccuracyAtSkillExact(double skill)
+        {
+            double accuracySum = 0.0;
+
+            foreach (AccuracyDifficulties difficulties in accuracyDifficulties)
+                accuracySum += difficulties.AccuracyAt(skill);
+
+            // Return the accuracy value, but we subtract 1% of the notes from the divisor so that an SS isn't just the difficulty of the highest note.
+            return accuracySum / (accuracyDifficulties.Count - Math.Min(accuracyDifficulties.Count * 0.01, 10));
+        }
+
+        private double accuracyAtSkillBinned(double skill)
+        {
+            double accuracySum = 0.0;
+
+            foreach (Bin bin in binnedDifficulties.Bins)
+                accuracySum += bin.AccuracyAt(skill) * bin.Count;
+
+            // Return the accuracy value, but we subtract 1% of the notes from the divisor so that an SS isn't just the difficulty of the highest note.
+            return accuracySum / (accuracyDifficulties.Count - Math.Min(accuracyDifficulties.Count * 0.01, 10));
+        }
+
+        /// <summary>
+        /// The coefficients of a quartic fitted to the miss counts at each skill level.
+        /// </summary>
+        /// <returns>The coefficients for our penalty polynomial.</returns>
+        public PolynomialPenaltyUtils.QuarticCoefficients GetScoreLossCoefficients(double ssSkill)
+        {
+            Dictionary<double, double> scoreLosses = new Dictionary<double, double>();
+
+            // If there are no notes, we just return a zero-polynomial.
+            if (ObjectDifficulties.Count == 0 || ObjectDifficulties.Max() == 0)
+                return new PolynomialPenaltyUtils.QuarticCoefficients();
+
+            foreach (double skillProportion in PolynomialPenaltyUtils.SKILL_PROPORTIONS)
+            {
+                if (skillProportion == 1)
+                {
+                    scoreLosses[skillProportion] = 0;
+                    continue;
+                }
+
+                double penalizedSkill = ssSkill * skillProportion;
+
+                // We take the log to squash miss counts, which have large absolute value differences, but low relative differences, into a straighter line for the polynomial.
+                scoreLosses[skillProportion] = Math.Log((1.0 - AccuracyAtSkillExact(penalizedSkill)) + 1);
+            }
+
+            return PolynomialPenaltyUtils.GetPenaltyCoefficients(scoreLosses);
+        }
+
         /// <summary>
         /// Sorts the recorded difficulties, which every reader below needs and none of them change.
         /// </summary>
@@ -111,59 +188,6 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Skills
             int index = Math.Clamp((int)Math.Round(maxIndex * percentile), 0, maxIndex);
 
             return sortedValues[index];
-        }
-
-        public override double DifficultyValue()
-        {
-            if (sortedDifficulties.Count == 0)
-                return 0.0;
-
-            sortDifficulties();
-
-            const int power_mean_exponent = 5;
-
-            double[] highPercentiles = { 0.945, 0.935, 0.925, 0.915 };
-            double[] midPercentiles = { 0.845, 0.835, 0.825, 0.815 };
-
-            double highMean = calculatePercentileMean(sortedDifficulties, highPercentiles);
-            double midMean = calculatePercentileMean(sortedDifficulties, midPercentiles);
-            double powerMean = calculatePowerMean(sortedDifficulties, power_mean_exponent);
-
-            const double high_percentile_weight = 0.25;
-            const double high_percentile_scale = 0.88;
-
-            const double mid_percentile_weight = 0.20;
-            const double mid_percentile_scale = 0.94;
-
-            const double power_mean_weight = 0.55;
-
-            double rawDifficulty = high_percentile_weight * (high_percentile_scale * highMean)
-                                   + mid_percentile_weight * (mid_percentile_scale * midMean)
-                                   + power_mean_weight * powerMean;
-
-            const double note_count_offset = 34.64147;
-            const double final_scaling = 0.90741;
-
-            return rawDifficulty * (totalNoteWeight / (totalNoteWeight + note_count_offset)) * final_scaling;
-        }
-
-        /// <summary>
-        /// Calculates the mean of specific percentile positions of <paramref name="sortedValues"/>.
-        /// </summary>
-        private static double calculatePercentileMean(List<double> sortedValues, double[] percentiles)
-        {
-            double sum = 0.0;
-
-            foreach (double percentile in percentiles)
-                sum += valueAtPercentile(sortedValues, percentile);
-
-            return sum / percentiles.Length;
-        }
-
-        private static double calculatePowerMean(List<double> values, int exponent)
-        {
-            double sum = values.Sum(value => DiffUtils.Pow(value, exponent));
-            return DiffUtils.Pow(sum / values.Count, 1.0 / exponent);
         }
     }
 }

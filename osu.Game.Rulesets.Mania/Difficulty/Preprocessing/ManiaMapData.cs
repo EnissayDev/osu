@@ -9,10 +9,13 @@ using osu.Game.Rulesets.Mania.Difficulty.Utils;
 
 namespace osu.Game.Rulesets.Mania.Difficulty.Preprocessing
 {
+    /// <summary>
+    /// The beatmap grouped into <see cref="ManiaRow"/>s, along with the readings around each row that would be
+    /// too expensive to work out again for every note.
+    /// </summary>
     public class ManiaMapData
     {
         public const int DEFAULT_DENSITY_RADIUS = 14;
-        private const int pulse_radius = 16;
 
         public readonly int TotalColumns;
 
@@ -21,6 +24,11 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Preprocessing
         private readonly List<ManiaRow> rows = new List<ManiaRow>();
 
         private readonly double[] localPulses;
+
+        /// <summary>
+        /// Running totals of how many rows of each <see cref="RowKind"/> came before each index, so that the
+        /// density over any window can be read as one subtraction.
+        /// </summary>
         private readonly int[][] rowKindCounts;
 
         public ManiaMapData(IReadOnlyList<ManiaDifficultyHitObject> objects, int totalColumns)
@@ -32,16 +40,21 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Preprocessing
             localPulses = calculateLocalPulses();
             rowKindCounts = new[]
             {
-                countRows(row => row.IsChord),
-                countRows(row => row.Hand == ManiaHand.Both),
-                countRows(row => row.Hand != ManiaHand.Both && row.Size >= 2),
-                countRows(row => row.Size >= 3),
+                countRows(RowKind.Chord),
+                countRows(RowKind.CrossHand),
+                countRows(RowKind.SingleHandChord),
+                countRows(RowKind.LargeChord),
             };
         }
 
         public ManiaRow? RowAt(int index) => index >= 0 && index < rows.Count ? rows[index] : null;
 
+        /// <summary>
+        /// The typical gap between rows around <paramref name="index"/>, as a median so that one break in the
+        /// middle of a stream does not move it.
+        /// </summary>
         public double LocalPulseAt(int index) => localPulses[index];
+
         public double ChordDensity(int index, int radius = DEFAULT_DENSITY_RADIUS) => density(RowKind.Chord, index, radius);
         public double CrossHandDensity(int index, int radius = DEFAULT_DENSITY_RADIUS) => density(RowKind.CrossHand, index, radius);
         public double SingleHandChordDensity(int index, int radius = DEFAULT_DENSITY_RADIUS) => density(RowKind.SingleHandChord, index, radius);
@@ -76,8 +89,14 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Preprocessing
             }
         }
 
+        /// <summary>
+        /// The median row gap around each row. Taken as a median rather than a mean so that a single long gap in
+        /// the middle of a stream reads as one break rather than as a slower stream.
+        /// </summary>
         private double[] calculateLocalPulses()
         {
+            const int pulse_radius = 16;
+
             double[] pulses = new double[rows.Count];
             double[] window = new double[2 * pulse_radius + 1];
 
@@ -104,16 +123,41 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Preprocessing
             return pulses;
         }
 
-        private int[] countRows(Func<ManiaRow, bool> matches)
+        private int[] countRows(RowKind kind)
         {
             int[] counts = new int[rows.Count + 1];
 
             for (int i = 0; i < rows.Count; i++)
-                counts[i + 1] = counts[i] + (matches(rows[i]) ? 1 : 0);
+                counts[i + 1] = counts[i] + (isKind(rows[i], kind) ? 1 : 0);
 
             return counts;
         }
 
+        private static bool isKind(ManiaRow row, RowKind kind)
+        {
+            switch (kind)
+            {
+                case RowKind.Chord:
+                    return row.IsChord;
+
+                case RowKind.CrossHand:
+                    return row.Hand == ManiaHand.Both;
+
+                case RowKind.SingleHandChord:
+                    return row.Hand != ManiaHand.Both && row.Size >= 2;
+
+                case RowKind.LargeChord:
+                    return row.Size >= 3;
+
+                default:
+                    return false;
+            }
+        }
+
+        /// <summary>
+        /// The share of the rows within <paramref name="radius"/> of <paramref name="index"/> that are of
+        /// <paramref name="kind"/>.
+        /// </summary>
         private double density(RowKind kind, int index, int radius)
         {
             int[] counts = rowKindCounts[(int)kind];
@@ -124,6 +168,10 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Preprocessing
             return (double)(counts[hi + 1] - counts[lo]) / (hi - lo + 1);
         }
 
+        /// <summary>
+        /// The kinds of row whose density the pattern detectors read. The order here indexes
+        /// <see cref="rowKindCounts"/>.
+        /// </summary>
         private enum RowKind
         {
             Chord,

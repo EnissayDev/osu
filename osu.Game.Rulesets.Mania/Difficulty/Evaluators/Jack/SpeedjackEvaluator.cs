@@ -10,13 +10,16 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators.Jack
 {
     internal static class SpeedjackEvaluator
     {
-        private const double speedjack_buff = 0.35;
-        private const double speedjack_speed_hi_ms = 110.0;
-        private const double speedjack_speed_lo_ms = 70.0;
-        private const double speedjack_single_gate = 0.5;
-        private const double speedjack_chord_taper = 0.8;
-        private const int speedjack_clean_window = 6;
+        /// <summary>
+        /// Above this gap the repeat is slow enough to be placed deliberately, and none of this applies.
+        /// </summary>
+        private const double slowest_speedjack_ms = 110.0;
 
+        /// <summary>
+        /// How much more a fast repeat is worth for landing in a passage that keeps moving. A repeat that fast is
+        /// only a speedjack while the rows around it are varied: the same shape struck twice, a roll, or a row that
+        /// shares no column at all are all something else, and are left alone.
+        /// </summary>
         public static double EvaluateMultiplierOf(ManiaDifficultyHitObject current)
         {
             ManiaRow row = current.Row;
@@ -26,7 +29,7 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators.Jack
             if (previous == null || previous2 == null)
                 return 1.0;
 
-            double speedScale = DiffUtils.Smoothstep(speedjack_speed_hi_ms - row.GapBefore, 0.0, speedjack_speed_hi_ms - speedjack_speed_lo_ms);
+            double speedScale = DiffUtils.Smoothstep(row.GapBefore, slowest_speedjack_ms, 70);
 
             if (speedScale <= 0.0)
                 return 1.0;
@@ -43,19 +46,22 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators.Jack
             if (clean <= 0.0)
                 return 1.0;
 
-            double sizeGate = row.Size <= 1
-                ? speedjack_single_gate
-                : 1.0 - speedjack_chord_taper * DiffUtils.Smoothstep(row.Size, 2.0, 4.0);
+            // A lone note repeating is a plain jack, so it earns part of the buff but a wide chord repeating is a
+            // chordjack, which Jack already pays for, so it earns almost none.
+            double sizeGate = row.Size <= 1 ? 0.5 : 1.0 - 0.8 * DiffUtils.Smoothstep(row.Size, 2.0, 4.0);
 
-            return 1.0 + speedjack_buff * speedScale * sizeGate * clean;
+            return 1.0 + 0.35 * speedScale * sizeGate * clean;
         }
 
+        /// <summary>
+        /// The share of the recent rows that step in a way the hand can mash through rather than jack.
+        /// </summary>
         private static double localJumptrillRollDensity(ManiaRow row)
         {
             int window = 0;
             int manipulable = 0;
 
-            for (ManiaRow? current = row; current != null && window < speedjack_clean_window; current = current.Previous())
+            for (ManiaRow? current = row; current != null && window < 6; current = current.Previous())
             {
                 window++;
 
@@ -65,7 +71,7 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators.Jack
                 if (previous == null || previous2 == null)
                     continue;
 
-                if (current.GapBefore > speedjack_speed_hi_ms)
+                if (current.GapBefore > slowest_speedjack_ms)
                     continue;
 
                 bool isJumptrill = ColumnPatternUtils.IsRecurrence(previous2.Columns, previous.Columns, current.Columns);

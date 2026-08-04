@@ -1,17 +1,20 @@
 // Copyright (c) ppy Pty Ltd <contact@ppy.sh>. Licensed under the MIT Licence.
 // See the LICENCE file in the repository root for full licence text.
 
-using System;
 using System.Collections.Generic;
-using osu.Game.Rulesets.Mania.Difficulty.Utils;
 
 namespace osu.Game.Rulesets.Mania.Difficulty.Preprocessing.Patterning
 {
     /// <summary>
-    /// A data class that stores mania row information. Includes grace notes (notes offset by at most <see cref="ChordUtils.CHORD_TOLERANCE_MS"/>).
+    /// Every hit object that starts close enough together to be hit at the same time. Patterns in
+    /// osu!mania are shapes built out of rows rather than out of single notes, so the detectors read the map
+    /// through these instead of through <see cref="ManiaDifficultyHitObject"/>s.
     /// </summary>
     public class ManiaRow
     {
+        /// <summary>
+        /// How many notes this row presses at once.
+        /// </summary>
         public int Size => Columns.Length;
 
         /// <summary>
@@ -24,7 +27,7 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Preprocessing.Patterning
         public readonly List<ManiaDifficultyHitObject> Objects;
 
         /// <summary>
-        /// The index of this row out of the list of all rows.
+        /// This row's index in the map's list of rows.
         /// </summary>
         public readonly int RowIndex;
 
@@ -56,7 +59,11 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Preprocessing.Patterning
         /// </summary>
         public bool IsHandLocal => Hand != ManiaHand.Both;
 
+        /// <summary>
+        /// How long it has been since the previous row, or infinity if this is the first row of the map.
+        /// </summary>
         public double GapBefore => Previous() is ManiaRow previous ? StartTime - previous.StartTime : double.PositiveInfinity;
+
         public int TotalColumns => mapData.TotalColumns;
         public double LocalPulse => mapData.LocalPulseAt(RowIndex);
         public double ChordDensity(int radius = ManiaMapData.DEFAULT_DENSITY_RADIUS) => mapData.ChordDensity(RowIndex, radius);
@@ -76,14 +83,17 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Preprocessing.Patterning
         /// <summary>
         /// This row together with the rows up to <paramref name="radius"/> places on either side of it.
         /// </summary>
-        public IEnumerable<ManiaRow> RowsAround(int radius)
+        public RowRange RowsAround(int radius)
         {
-            for (int offset = -radius; offset <= radius; offset++)
-            {
-                if (Offset(offset) is ManiaRow row)
-                    yield return row;
-            }
+            ManiaRow first = this;
+
+            while (RowIndex - first.RowIndex < radius && first.Previous() is ManiaRow earlier)
+                first = earlier;
+
+            return new RowRange(first, RowIndex + radius);
         }
+
+        public RowRange RowsUpTo(ManiaRow last) => new RowRange(this, last.RowIndex);
 
         /// <summary>
         /// This row first, then the rows before and after it that start within <paramref name="radiusMs"/> of
@@ -126,73 +136,6 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Preprocessing.Patterning
             return last;
         }
 
-        /// <summary>
-        /// The share of the rows within <paramref name="radius"/> places of this one that match
-        /// <paramref name="matches"/>. Rows it answers null for count towards neither side of the share.
-        /// </summary>
-        public double ShareOfRowsAround(int radius, Func<ManiaRow, bool?> matches)
-        {
-            int matched = 0;
-            int total = 0;
-
-            foreach (var row in RowsAround(radius))
-            {
-                if (matches(row) is not bool isMatch)
-                    continue;
-
-                total++;
-
-                if (isMatch)
-                    matched++;
-            }
-
-            return total > 0 ? (double)matched / total : 0.0;
-        }
-
-        /// <summary>
-        /// The mean of <paramref name="selector"/> over the rows within <paramref name="radius"/> places of this one.
-        /// </summary>
-        public double AverageOfRowsAround(int radius, Func<ManiaRow, double> selector)
-        {
-            double sum = 0.0;
-            int count = 0;
-
-            foreach (var row in RowsAround(radius))
-            {
-                sum += selector(row);
-                count++;
-            }
-
-            return count > 0 ? sum / count : 0.0;
-        }
-
-        /// <summary>
-        /// How many steps of <paramref name="step"/> rows back from this one keep satisfying
-        /// <paramref name="extendsRun"/>, stopping after <paramref name="cap"/> steps.
-        /// </summary>
-        public int RunLengthBack(int cap, int step, Func<ManiaRow, ManiaRow, bool> extendsRun)
-            => RunLengthBack(cap, step, extendsRun, (current, earlier, matches) => matches(current, earlier));
-
-        /// <summary>
-        /// How many steps of <paramref name="step"/> rows back from this one keep satisfying
-        /// <paramref name="extendsRun"/>, stopping after <paramref name="cap"/> steps.
-        /// <paramref name="state"/> is passed along to <paramref name="extendsRun"/> so that it does not have to
-        /// close over it.
-        /// </summary>
-        public int RunLengthBack<TState>(int cap, int step, TState state, Func<ManiaRow, ManiaRow, TState, bool> extendsRun)
-        {
-            int steps = 0;
-            ManiaRow current = this;
-
-            while (steps < cap && current.Offset(-step) is ManiaRow earlier && extendsRun(current, earlier, state))
-            {
-                steps++;
-                current = earlier;
-            }
-
-            return steps;
-        }
-
         public bool Contains(int column)
         {
             foreach (int c in Columns)
@@ -206,6 +149,10 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Preprocessing.Patterning
 
         public bool IsSameRow(ManiaRow other) => RowIndex == other.RowIndex;
 
+        /// <summary>
+        /// Which hand plays a row, taking the columns to be split evenly down the middle. On odd keymodes the
+        /// middle column belongs to neither side, so a row using only it is not a cross-hand row.
+        /// </summary>
         private static ManiaHand handOf(int[] columns, int totalColumns)
         {
             bool hasLeft = false;

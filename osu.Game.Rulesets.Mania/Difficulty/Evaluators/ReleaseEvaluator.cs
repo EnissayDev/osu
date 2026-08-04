@@ -1,4 +1,4 @@
-﻿// Copyright (c) ppy Pty Ltd <contact@ppy.sh>. Licensed under the MIT Licence.
+// Copyright (c) ppy Pty Ltd <contact@ppy.sh>. Licensed under the MIT Licence.
 // See the LICENCE file in the repository root for full licence text.
 
 using System;
@@ -11,25 +11,19 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
 {
     public static class ReleaseEvaluator
     {
+        /// <summary>
+        /// Holds longer than this are all the same amount of work to keep held, so the duration is capped here
+        /// before anything reads it.
+        /// </summary>
         private const double max_long_note_duration_ms = 1000.0;
 
-        private const double long_note_gate_midpoint_ms = 110.90068;
-        private const double long_note_gate_slope = 0.07;
-
-        private const double long_note_base_load = 0.42;
-        private const double long_note_duration_load = 0.9;
-
-        private const double long_hold_buff = 1.6;
-        private const double long_hold_gate_lo_ms = 500.0;
-        private const double long_hold_gate_hi_ms = 680.0;
-
-        // Releases very close together are harder to time apart.
-        private const double overlapping_release_slope = 0.1;
-        private const double overlapping_release_offset_ms = 30.0;
-        private const double overlapping_release_weight = 0.2;
-
-        private const double total_weight = 2.83449;
-
+        /// <summary>
+        /// Evaluates the difficulty of letting go of the current long note, based on:
+        /// <list type="bullet">
+        /// <item><description>how long it is held for,</description></item>
+        /// <item><description>and how close its release lands to a release in another column.</description></item>
+        /// </list>
+        /// </summary>
         public static double EvaluateDifficultyOf(ManiaDifficultyHitObject current)
         {
             double releaseDifficulty = 0.0;
@@ -37,8 +31,11 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
             if (current.BaseObject is not HoldNote)
                 return releaseDifficulty;
 
+            // Release is not combined in quadrature with the tap skills, so it carries its whole weight here.
+            const double total_weight = 2.83449;
+
             double duration = Math.Min(current.EndTime - current.StartTime, max_long_note_duration_ms);
-            double longNoteGate = DiffUtils.Logistic(duration, long_note_gate_midpoint_ms, long_note_gate_slope);
+            double longNoteGate = longNoteGateOf(duration);
 
             releaseDifficulty += calculateLongHoldBonus(duration, longNoteGate);
             releaseDifficulty += calculateReleaseSpeedBonus(current, longNoteGate);
@@ -46,15 +43,34 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
             return releaseDifficulty * total_weight;
         }
 
+        /// <summary>
+        /// How much of a hold note this object really is. A hold barely longer than a tap ends in the same
+        /// motion that started it, so short durations fade out rather than switching off at a hard length.
+        /// </summary>
+        private static double longNoteGateOf(double duration) => DiffUtils.Logistic(duration, 110.90068, 0.07);
+
+        /// <summary>
+        /// The work of holding the note down, growing with its duration and growing faster once the hold is long
+        /// enough that it has to be tracked rather than just ridden out.
+        /// </summary>
         private static double calculateLongHoldBonus(double duration, double longNoteGate)
         {
-            double holdLengthFactor = long_hold_buff * DiffUtils.Smoothstep(duration, long_hold_gate_lo_ms, long_hold_gate_hi_ms) * (duration / 1000.0);
+            double seconds = duration / 1000.0;
+            double holdLengthFactor = 1.6 * DiffUtils.Smoothstep(duration, 500, 680) * seconds;
 
-            return (long_note_base_load + long_note_duration_load * (duration / 1000.0) + holdLengthFactor) * longNoteGate;
+            return (0.42 + 0.9 * seconds + holdLengthFactor) * longNoteGate;
         }
 
+        /// <summary>
+        /// Releases very close together are harder to time apart, so the closest release in any other column that
+        /// is still being held is paid for here.
+        /// </summary>
         private static double calculateReleaseSpeedBonus(ManiaDifficultyHitObject current, double longNoteGate)
         {
+            const double slope = 0.1;
+            const double offset_ms = 30.0;
+            const double weight = 0.2;
+
             double closestReleaseDelta = double.PositiveInfinity;
 
             for (int otherColumn = 0; otherColumn < current.Row.TotalColumns; otherColumn++)
@@ -62,6 +78,7 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
                 if (otherColumn == current.Column)
                     continue;
 
+                // A hold starting in the same chord is one press, not a second thing to track.
                 if (Math.Abs(current.LastStartTimeInColumn(otherColumn) - current.StartTime) <= ChordUtils.CHORD_TOLERANCE_MS)
                     continue;
 
@@ -71,7 +88,7 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
                     closestReleaseDelta = Math.Min(closestReleaseDelta, Math.Abs(current.EndTime - otherEndTime));
             }
 
-            return overlapping_release_weight * DiffUtils.Logistic(overlapping_release_slope * (closestReleaseDelta - overlapping_release_offset_ms), longNoteGate);
+            return weight * DiffUtils.Logistic(slope * (closestReleaseDelta - offset_ms), longNoteGate);
         }
     }
 }

@@ -5,6 +5,9 @@ using System;
 
 namespace osu.Game.Rulesets.Mania.Difficulty.Utils
 {
+    /// <summary>
+    /// Comparisons between the column sets of two rows. Every array passed here is sorted ascending.
+    /// </summary>
     public static class ColumnPatternUtils
     {
         /// <summary>

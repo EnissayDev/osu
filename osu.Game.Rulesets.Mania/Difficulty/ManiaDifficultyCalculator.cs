@@ -27,18 +27,14 @@ namespace osu.Game.Rulesets.Mania.Difficulty
     public class ManiaDifficultyCalculator : DifficultyCalculator
     {
         private const double overall_multiplier = 0.360643;
-        private const double power_exponent = 0.52899;
+        public const double STAR_RATING_EXPONENT = 0.52899;
 
-        private const double strain_length_base_nerf = 0.195;
+        /*private const double strain_length_base_nerf = 0.195;
         private const double strain_length_full_strains = 420.0;
         private const double strain_length_max = strain_length_base_nerf / (1.0 - strain_length_base_nerf);
-        private const double strain_length_hold_lo = 250.0;
-        private const double strain_length_hold_hi = 450.0;
 
         private const double consistency_base_nerf = 0.18;
-        private const double consistency_bonus_max = consistency_base_nerf / (1.0 - consistency_base_nerf);
-        private const double consistency_ratio_lo = 0.24;
-        private const double consistency_ratio_hi = 0.50;
+        private const double consistency_bonus_max = consistency_base_nerf / (1.0 - consistency_base_nerf);*/
 
         private const double od_weight = 0.188;
 
@@ -75,28 +71,33 @@ namespace osu.Game.Rulesets.Mania.Difficulty
             int totalNotes = beatmap.HitObjects.Count;
             int holdNotes = beatmap.HitObjects.Count(h => h is HoldNote);
 
-            double lnRatio = totalNotes > 0 ? (double)holdNotes / totalNotes : 0.0;
-
-            double meanHoldMs = holdNotes > 0 ? beatmap.HitObjects.OfType<HoldNote>().Average(h => h.Duration) : 0.0;
+            /*double meanHoldMs = holdNotes > 0 ? beatmap.HitObjects.OfType<HoldNote>().Average(h => h.Duration) : 0.0;
             double lengthBonus = strainLengthBonus(totalSkill.CountDifficultStrains(), meanHoldMs);
-            double consistencyMult = consistencyBonus(totalSkill.SustainRatio());
-
-            double totalDifficulty = totalSkill.DifficultyValue();
-            double coordinationDifficulty = coordinationSkill.DifficultyValue();
+            double consistencyMult = consistencyBonus(totalSkill.SustainRatio());*/
+            double lengthBonus = 1;
+            double consistencyMult = lengthBonus;
 
             double speedStarRating = scaleToStarRating(speedSkill.DifficultyValue()) * odMult;
             double technicalStarRating = scaleToStarRating(technicalSkill.DifficultyValue()) * odMult;
             double jackStarRating = scaleToStarRating(jackSkill.DifficultyValue()) * odMult;
-            double coordinationStarRating = scaleToStarRating(coordinationDifficulty) * odMult;
+            double coordinationStarRating = scaleToStarRating(coordinationSkill.DifficultyValue()) * odMult;
             double releaseStarRating = scaleToStarRating(releaseSkill.DifficultyValue()) * odMult;
 
-            double starRating = scaleToStarRating(totalDifficulty * consistencyMult)
-                                * odMult
-                                * lengthBonus;
+            double starRating = scaleToStarRating(totalSkill.DifficultyValue() * consistencyMult) * odMult * lengthBonus;
+
+            double ssSkill = totalSkill.DifficultyValueAtAccuracy(1.0);
+            double starRatingSS = scaleToStarRating(ssSkill * consistencyMult) * odMult * lengthBonus;
+
+            var scoreLossCoefficients = totalSkill.GetScoreLossCoefficients(ssSkill);
 
             return new ManiaDifficultyAttributes
             {
                 StarRating = starRating,
+                StarRatingSS = starRatingSS,
+                ScoreLossCoefficientA = scoreLossCoefficients.A,
+                ScoreLossCoefficientB = scoreLossCoefficients.B,
+                ScoreLossCoefficientC = scoreLossCoefficients.C,
+                ScoreLossCoefficientD = scoreLossCoefficients.D,
                 Mods = mods,
                 MaxCombo = beatmap.HitObjects.Sum(maxComboForObject),
                 SpeedDifficulty = speedStarRating,
@@ -105,7 +106,7 @@ namespace osu.Game.Rulesets.Mania.Difficulty
                 CoordinationDifficulty = coordinationStarRating,
                 ReleaseDifficulty = releaseStarRating,
                 Variety = participationRatio(speedStarRating, technicalStarRating, jackStarRating, coordinationStarRating, releaseStarRating),
-                LnRatio = lnRatio,
+                LnRatio = totalNotes > 0 ? (double)holdNotes / totalNotes : 0.0,
                 GreatHitWindow = greatHitWindow,
                 MeanManipulation = meanManipulation,
                 NoteCount = totalNotes,
@@ -128,12 +129,12 @@ namespace osu.Game.Rulesets.Mania.Difficulty
             return sumSquares > 0 ? sum * sum / sumSquares : 1.0;
         }
 
-        private static double strainLengthBonus(double difficultStrains, double meanHoldMs)
+        /*private static double strainLengthBonus(double difficultStrains, double meanHoldMs)
         {
             double lengthFraction = Math.Clamp(difficultStrains / strain_length_full_strains, 0.0, 1.0);
 
             // Long holds add sustained content the note count can't see, so they fill out the length too.
-            double holdProtection = DiffUtils.Smoothstep(meanHoldMs, strain_length_hold_lo, strain_length_hold_hi);
+            double holdProtection = DiffUtils.Smoothstep(meanHoldMs, 250, 450);
             lengthFraction = 1.0 - (1.0 - lengthFraction) * (1.0 - holdProtection);
 
             return (1.0 - strain_length_base_nerf) * (1.0 + strain_length_max * lengthFraction);
@@ -141,16 +142,16 @@ namespace osu.Game.Rulesets.Mania.Difficulty
 
         private static double consistencyBonus(double sustainRatio)
         {
-            double consistency = DiffUtils.Smoothstep(sustainRatio, consistency_ratio_lo, consistency_ratio_hi);
+            double consistency = DiffUtils.Smoothstep(sustainRatio, 0.24, 0.50);
             return (1.0 - consistency_base_nerf) * (1.0 + consistency_bonus_max * consistency);
-        }
+        }*/
 
         private static double scaleToStarRating(double aggregatedDifficulty)
         {
             if (aggregatedDifficulty <= 0)
                 return 0.0;
 
-            return overall_multiplier * DiffUtils.Pow(aggregatedDifficulty, power_exponent);
+            return overall_multiplier * DiffUtils.Pow(aggregatedDifficulty, STAR_RATING_EXPONENT);
         }
 
         private static double hitWindowDifficultyMultiplier(IBeatmap beatmap)
@@ -168,7 +169,7 @@ namespace osu.Game.Rulesets.Mania.Difficulty
 
         private static double hitLeniency(double greatHitWindow) => 0.6 * (greatHitWindow - 90) + 90;
 
-        private double hitWindowMultiplier(double greatHitWindow)
+        private static double hitWindowMultiplier(double greatHitWindow)
         {
             const double od8_great_window = 40.0;
 
@@ -177,7 +178,7 @@ namespace osu.Game.Rulesets.Mania.Difficulty
             return 1.0 + od_weight * (raw - 1.0);
         }
 
-        private int maxComboForObject(HitObject hitObject)
+        private static int maxComboForObject(HitObject hitObject)
         {
             if (hitObject is HoldNote hold)
                 return 1 + (int)((hold.EndTime - hold.StartTime) / 100);
@@ -207,12 +208,11 @@ namespace osu.Game.Rulesets.Mania.Difficulty
                 perColumnObjects[currentObject.Column].Add(currentObject);
             }
 
-            ManiaMapData mapData = new ManiaMapData(objects.Cast<ManiaDifficultyHitObject>().ToList(), totalColumns);
-            ManiaPatternContextPreprocessor.ProcessAndAssign(mapData);
+            // Patterns are made of many rows, so they have to be found before any single note can be evaluated.
+            var maniaObjects = objects.Cast<ManiaDifficultyHitObject>().ToList();
+            ManiaPatternContextPreprocessor.ProcessAndAssign(new ManiaMapData(maniaObjects, totalColumns));
 
-            meanManipulation = objects.Count > 0
-                ? objects.Cast<ManiaDifficultyHitObject>().Average(o => o.ManipulationFactor)
-                : 1.0;
+            meanManipulation = maniaObjects.Count > 0 ? maniaObjects.Average(o => o.ManipulationFactor) : 1.0;
 
             return objects;
         }
@@ -227,6 +227,7 @@ namespace osu.Game.Rulesets.Mania.Difficulty
             CoordinationProcessor coordinationProcessor = new CoordinationProcessor();
             ReleaseProcessor releaseProcessor = new ReleaseProcessor();
 
+            // Total has to come last so that every other skill has processed the current note before it reads them.
             return new Skill[]
             {
                 new Speed(mods, speedProcessor),

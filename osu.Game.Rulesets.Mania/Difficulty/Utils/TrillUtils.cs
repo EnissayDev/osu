@@ -43,7 +43,6 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Utils
                 trillStep = previousNote;
             }
 
-            // trill_nerf is the floor the multiplier eases down to, so the ramped depth is what is left above it.
             return RunDampenUtils.Dampen(run, trill_run_ramp, 1.0 - trill_nerf);
         }
     }

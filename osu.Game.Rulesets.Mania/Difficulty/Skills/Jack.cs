@@ -3,6 +3,7 @@
 
 using osu.Game.Rulesets.Difficulty.Preprocessing;
 using osu.Game.Rulesets.Mania.Difficulty.Processing;
+using osu.Game.Rulesets.Mania.Difficulty.Utils;
 using osu.Game.Rulesets.Mods;
 
 namespace osu.Game.Rulesets.Mania.Difficulty.Skills
@@ -17,11 +18,11 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Skills
             this.jackProcessor = jackProcessor;
         }
 
-        protected override double DifficultyAt(DifficultyHitObject current)
+        protected override AccuracyDifficulties AccuracyDifficultiesAt(DifficultyHitObject current)
         {
             jackProcessor.ProcessStrainFor(current);
 
-            return jackProcessor.CurrentStrain;
+            return jackProcessor.TransformStrainToAccuracyDifficulties(jackProcessor.CurrentStrain);
         }
     }
 }

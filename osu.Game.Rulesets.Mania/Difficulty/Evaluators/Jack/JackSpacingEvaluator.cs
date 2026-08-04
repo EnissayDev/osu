@@ -11,64 +11,45 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators.Jack
 {
     internal static class JackSpacingEvaluator
     {
+        /// <summary>
+        /// How many rows either side of the current one the passage is read from.
+        /// </summary>
         private const int context_radius = 6;
 
-        private const double incidental_nerf = 0.9;
-        private const double incidental_rows_lo = 2.2;
-        private const double incidental_rows_hi = 3.2;
-
-        private const double incidental_column_delta_lo = 122.0;
-        private const double incidental_column_delta_hi = 150.0;
-
-        private const double incidental_single_note_share_lo = 0.72;
-        private const double incidental_single_note_share_hi = 0.90;
-
-        private const double handstream_nerf = 0.70;
-        private const double handstream_rows_lo = 1.7;
-        private const double handstream_rows_hi = 2.6;
-
-        private const double handstream_column_delta_lo = 122.0;
-        private const double handstream_column_delta_hi = 155.0;
-
-        private const double handstream_moved_share_lo = 0.55;
-        private const double handstream_moved_share_hi = 0.80;
-
-        private const double handstream_pulse_lo = 44.0;
-        private const double handstream_pulse_hi = 58.0;
-
-        private const double handstream_chord_share = 0.55;
-
-        private const double stray_nerf = 0.45;
-        private const double stray_notes_lo = 1.5;
-        private const double stray_notes_hi = 2.2;
-
-        private const double stray_column_delta_lo = 78.0;
-        private const double stray_column_delta_hi = 90.0;
-
-        private const double stray_chord_share_lo = 0.50;
-        private const double stray_chord_share_hi = 0.78;
-
-        private const double stray_repeat_share_lo = 0.25;
-        private const double stray_repeat_share_hi = 0.55;
-
-        private const double stray_run_lo = 3.0;
-        private const double stray_run_hi = 6.0;
-        private const double stray_run_window_ms = 130.0;
-
-        public static double EvaluateMultiplierOf(ManiaDifficultyHitObject current, int chordDepth, double columnDelta)
+        /// <summary>
+        /// How much of the repeat is given back because the map lets it be hit with something other than a
+        /// jack motion. The nerfs read different spacings of the same repeat, so the strongest one wins
+        /// rather than compounding.
+        /// </summary>
+        public static double EvaluateMultiplierOf(ManiaDifficultyHitObject current, int chordDepth, double columnDelta, double tapRate)
         {
+            double single = evaluateSingle(chordDepth, tapRate);
             double rowGap = rowGapOf(current);
 
             if (rowGap <= 1.0)
-                return 1.0;
+                return single;
 
+            // How many rows the chart got through before coming back to this column. This is what separates a
+            // jack from a stream that wrapped around, and every nerf below is keyed on it.
             double rowsBetween = columnDelta / rowGap;
 
             double rowSpacing = Math.Max(
                 evaluateIncidental(current, chordDepth, rowsBetween, columnDelta),
                 evaluateHandstream(current, chordDepth, rowsBetween, columnDelta, rowGap));
 
-            return 1.0 - Math.Max(rowSpacing, evaluateStray(current, columnDelta));
+            return Math.Min(single, 1.0 - Math.Max(rowSpacing, evaluateStray(current, columnDelta)));
+        }
+
+        /// <summary>
+        /// A lone column repeating at mashable speed, with no other column between the presses.
+        /// </summary>
+        private static double evaluateSingle(int chordDepth, double tapRate)
+        {
+            if (chordDepth >= 2)
+                return 1.0;
+
+            // Single-column repeats around this tap rate are mashable, and slower or faster ones are not.
+            return 1.0 - 0.10 * DiffUtils.SmoothstepBellCurve(tapRate, 5.5, 0.7);
         }
 
         /// <summary>
@@ -79,15 +60,15 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators.Jack
             if (chordDepth >= 2)
                 return 0.0;
 
-            double spacingGate = DiffUtils.Smoothstep(rowsBetween, incidental_rows_lo, incidental_rows_hi);
+            double spacingGate = DiffUtils.Smoothstep(rowsBetween, 2.2, 3.2);
 
             if (spacingGate <= 0.0)
                 return 0.0;
 
-            double slowGate = DiffUtils.Smoothstep(columnDelta, incidental_column_delta_lo, incidental_column_delta_hi);
-            double streamGate = DiffUtils.Smoothstep(singleNoteShare(current), incidental_single_note_share_lo, incidental_single_note_share_hi);
+            double slowGate = DiffUtils.Smoothstep(columnDelta, 122, 150);
+            double streamGate = DiffUtils.Smoothstep(singleNoteShare(current), 0.72, 0.90);
 
-            return incidental_nerf * spacingGate * slowGate * streamGate;
+            return 0.9 * spacingGate * slowGate * streamGate;
         }
 
         /// <summary>
@@ -95,19 +76,27 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators.Jack
         /// </summary>
         private static double evaluateHandstream(ManiaDifficultyHitObject current, int chordDepth, double rowsBetween, double columnDelta, double rowGap)
         {
-            double spacingGate = DiffUtils.Smoothstep(rowsBetween, handstream_rows_lo, handstream_rows_hi);
+            double spacingGate = DiffUtils.Smoothstep(rowsBetween, 1.7, 2.6);
 
             if (spacingGate <= 0.0)
                 return 0.0;
 
-            double chordShare = chordDepth >= 2 ? handstream_chord_share : 1.0;
-            double slowGate = DiffUtils.Smoothstep(columnDelta, handstream_column_delta_lo, handstream_column_delta_hi);
-            double streamGate = DiffUtils.Smoothstep(movedShare(current), handstream_moved_share_lo, handstream_moved_share_hi);
-            double pulseGate = DiffUtils.Smoothstep(rowGap, handstream_pulse_lo, handstream_pulse_hi);
+            // A chord coming back to the same column is more of a jack than a single note is, so it keeps more.
+            double chordShare = chordDepth >= 2 ? 0.55 : 1.0;
 
-            return handstream_nerf * chordShare * spacingGate * slowGate * streamGate * pulseGate;
+            double slowGate = DiffUtils.Smoothstep(columnDelta, 122, 155);
+            double streamGate = DiffUtils.Smoothstep(movedShare(current), 0.55, 0.80);
+
+            double pulseGate = DiffUtils.Smoothstep(rowGap, 44, 58);
+
+            return 0.70 * chordShare * spacingGate * slowGate * streamGate * pulseGate;
         }
 
+        /// <summary>
+        /// The repeat came back before the chart had time to play another note, so it is a stray press inside a
+        /// fast section rather than a repeat that was aimed for. Spared when the section is actually chordjack,
+        /// or when the column is holding a long anchor run.
+        /// </summary>
         private static double evaluateStray(ManiaDifficultyHitObject current, double columnDelta)
         {
             double noteGap = current.DeltaTime;
@@ -116,24 +105,22 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators.Jack
                 return 0.0;
 
             double notesBetween = columnDelta / noteGap;
-            double spacingGate = 1.0 - DiffUtils.Smoothstep(notesBetween, stray_notes_lo, stray_notes_hi);
+            double spacingGate = DiffUtils.Smoothstep(notesBetween, 2.2, 1.5);
 
             if (spacingGate <= 0.0)
                 return 0.0;
 
-            double speedGate = DiffUtils.Smoothstep(columnDelta, stray_column_delta_lo, stray_column_delta_hi);
+            double speedGate = DiffUtils.Smoothstep(columnDelta, 78, 90);
 
             if (speedGate <= 0.0)
                 return 0.0;
 
             var (chordShare, repeatShare) = chordContext(current);
 
-            double chordSpare = DiffUtils.Smoothstep(chordShare, stray_chord_share_lo, stray_chord_share_hi)
-                                * (1.0 - DiffUtils.Smoothstep(repeatShare, stray_repeat_share_lo, stray_repeat_share_hi));
+            double chordSpare = DiffUtils.Smoothstep(chordShare, 0.50, 0.78) * DiffUtils.Smoothstep(repeatShare, 0.55, 0.25);
+            double anchorSpare = DiffUtils.Smoothstep(ColumnRunUtils.RunLengthAround(current, 130), 3, 6);
 
-            double anchorSpare = DiffUtils.Smoothstep(ColumnRunUtils.RunLengthAround(current, stray_run_window_ms), stray_run_lo, stray_run_hi);
-
-            return stray_nerf * spacingGate * speedGate * (1.0 - chordSpare) * (1.0 - anchorSpare);
+            return 0.45 * spacingGate * speedGate * (1.0 - chordSpare) * (1.0 - anchorSpare);
         }
 
         /// <summary>
@@ -145,22 +132,74 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators.Jack
             return previousRow != null ? current.Row.StartTime - previousRow.StartTime : current.DeltaTime;
         }
 
+        /// <summary>
+        /// The share of the rows around <paramref name="current"/> that are a single note.
+        /// </summary>
         private static double singleNoteShare(ManiaDifficultyHitObject current)
-            => current.Row.ShareOfRowsAround(context_radius, row => row.IsSingleNote);
+        {
+            int singleNoteRows = 0;
+            int rows = 0;
 
+            foreach (var row in current.Row.RowsAround(context_radius))
+            {
+                rows++;
+
+                if (row.IsSingleNote)
+                    singleNoteRows++;
+            }
+
+            return rows > 0 ? (double)singleNoteRows / rows : 0.0;
+        }
+
+        /// <summary>
+        /// The share of the row steps around <paramref name="current"/> that leave every column they were on.
+        /// </summary>
         private static double movedShare(ManiaDifficultyHitObject current)
-            => current.Row.ShareOfRowsAround(context_radius, row => row.Previous() is ManiaRow previous
-                ? !ColumnPatternUtils.SharesColumn(row.Columns, previous.Columns)
-                : null);
+        {
+            int movedRows = 0;
+            int rows = 0;
 
+            foreach (var row in current.Row.RowsAround(context_radius))
+            {
+                if (row.Previous() is not ManiaRow previous)
+                    continue;
+
+                rows++;
+
+                if (!ColumnPatternUtils.SharesColumn(row.Columns, previous.Columns))
+                    movedRows++;
+            }
+
+            return rows > 0 ? (double)movedRows / rows : 0.0;
+        }
+
+        /// <summary>
+        /// The share of the rows around <paramref name="current"/> that are chords, and the share of those chords
+        /// that repeat the chord before them.
+        /// </summary>
         private static (double chordShare, double repeatShare) chordContext(ManiaDifficultyHitObject current)
         {
-            double chordShare = current.Row.ShareOfRowsAround(context_radius, row => row.Size >= 3);
+            int rows = 0;
+            int chordRows = 0;
+            int repeatedChordRows = 0;
+
+            foreach (var row in current.Row.RowsAround(context_radius))
+            {
+                rows++;
+
+                if (row.Size < 3)
+                    continue;
+
+                chordRows++;
+
+                if (row.Previous() is ManiaRow previous && ColumnPatternUtils.SameColumns(previous.Columns, row.Columns))
+                    repeatedChordRows++;
+            }
+
+            double chordShare = rows > 0 ? (double)chordRows / rows : 0.0;
 
             // Rows that are not chords at all are skipped, so this share is out of the chords alone.
-            double repeatShare = current.Row.ShareOfRowsAround(context_radius, row => row.Size < 3
-                ? null
-                : row.Previous() is ManiaRow previous && ColumnPatternUtils.SameColumns(previous.Columns, row.Columns));
+            double repeatShare = chordRows > 0 ? (double)repeatedChordRows / chordRows : 0.0;
 
             return (chordShare, repeatShare);
         }

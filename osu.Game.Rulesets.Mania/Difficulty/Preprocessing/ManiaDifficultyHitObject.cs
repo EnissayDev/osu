@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using osu.Game.Rulesets.Difficulty.Preprocessing;
 using osu.Game.Rulesets.Mania.Difficulty.Preprocessing.Patterning;
+using osu.Game.Rulesets.Mania.Difficulty.Preprocessing.Patterning.Detectors;
 using osu.Game.Rulesets.Mania.Objects;
 using osu.Game.Rulesets.Objects;
 
@@ -14,24 +15,31 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Preprocessing
     {
         public new ManiaHitObject BaseObject => (ManiaHitObject)base.BaseObject;
 
-        private readonly List<DifficultyHitObject>[] perColumnObjects;
-
-        private readonly int columnIndex;
-
         public readonly int Column;
-
-        /// <summary>
-        /// The hit object earlier in time than this note in each column.
-        /// </summary>
-        public readonly ManiaDifficultyHitObject?[] PreviousHitObjects;
 
         public readonly double ColumnDelta;
 
+        public readonly ManiaDifficultyHitObject?[] PreviousHitObjects;
+
         public ManiaRow Row = null!;
 
+        /// <summary>
+        /// How much of this note's difficulty is left once the surrounding pattern turns out to be playable with an
+        /// easier motion than the one it was written as. 1 means it has to be played exactly as written.
+        /// This is populated via <see cref="ManiaPatternContextPreprocessor"/>.
+        /// </summary>
         public double ManipulationFactor = 1.0;
 
+        /// <summary>
+        /// How much this note is worth for the sustained density around it. Above 1 for a section that holds a
+        /// high rate, below 1 for one that only reaches that rate in bursts.
+        /// This is populated via <see cref="EnduranceDetector"/>.
+        /// </summary>
         public double EnduranceFactor = 1.0;
+
+        private readonly List<DifficultyHitObject>[] perColumnObjects;
+
+        private readonly int columnIndex;
 
         public ManiaDifficultyHitObject(HitObject hitObject, HitObject lastObject, double clockRate, List<DifficultyHitObject> objects, List<DifficultyHitObject>[] perColumnObjects, int index)
             : base(hitObject, lastObject, clockRate, objects, index)
@@ -41,7 +49,7 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Preprocessing
             Column = BaseObject.Column;
             columnIndex = perColumnObjects[Column].Count;
             PreviousHitObjects = new ManiaDifficultyHitObject[totalColumns];
-            ColumnDelta = StartTime - PrevInColumn(0)?.StartTime ?? StartTime;
+            ColumnDelta = (StartTime - PrevInColumn(0)?.StartTime) ?? StartTime;
 
             if (index > 0)
             {
@@ -100,6 +108,7 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Preprocessing
                 if (otherColumn == Column)
                     continue;
 
+                // A hold that started in this same chord is part of one press, not a finger already committed.
                 if (Math.Abs(LastStartTimeInColumn(otherColumn) - StartTime) <= chordTolerance)
                     continue;
 

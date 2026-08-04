@@ -12,11 +12,30 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Processing
 {
     public class TechnicalProcessor : IDifficultyProcessor
     {
+        private static readonly AccuracyValueMultipliers multipliers = new AccuracyValueMultipliers
+        (
+            multiplierAtSS: 1.46,
+            multiplierAt99_5: 1.38,
+            multiplierAt99: 1.25,
+            multiplierAt98: 1.1,
+            multiplierAt95: 0.88,
+            multiplierAt90: 0.7,
+            multiplierAt85: 0.55,
+            multiplierAt80: 0.25
+        );
+
         public double CurrentStrain { get; private set; }
 
         private const double strain_decay_base = 0.06696;
 
+        /// <summary>
+        /// How many notes back the rolling irregularity is averaged over.
+        /// </summary>
         private const int rhythm_window = 10;
+
+        /// <summary>
+        /// How many notes back distinct shapes are counted over.
+        /// </summary>
         private const int variety_window = 8;
 
         private readonly Queue<double> recentIrregularities = new Queue<double>();
@@ -33,6 +52,7 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Processing
 
             var hitObject = (ManiaDifficultyHitObject)current;
 
+            // Every note of a chord is pressed at once, so the pattern only steps forward on the first of them.
             if (hitObject.DeltaTime < ChordUtils.CHORD_TOLERANCE_MS)
                 return;
 
@@ -42,6 +62,10 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Processing
             CurrentStrain += TechnicalEvaluator.EvaluateDifficultyOf(hitObject, rhythmIrregularity, patternVariety(hitObject), windowedIrregularity(rhythmIrregularity));
         }
 
+        /// <summary>
+        /// The mean irregularity over the last few notes. A single spacing change is a rhythm the player reads
+        /// once, while a passage of them is a rhythm the player has to keep reading.
+        /// </summary>
         private double windowedIrregularity(double rhythmIrregularity)
         {
             recentIrregularities.Enqueue(rhythmIrregularity);
@@ -63,6 +87,10 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Processing
             return TechnicalEvaluator.EvaluatePatternVarietyOf(distinctShapeCount());
         }
 
+        /// <summary>
+        /// How many of the recent shapes differ from each other. The window is small enough that comparing every
+        /// pair is cheaper than keeping a set.
+        /// </summary>
         private int distinctShapeCount()
         {
             recentShapes.CopyTo(shapeBuffer, 0);
@@ -89,5 +117,7 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Processing
 
             return distinct;
         }
+
+        public AccuracyDifficulties TransformStrainToAccuracyDifficulties(double strain) => new AccuracyDifficulties(strain, multipliers);
     }
 }
