@@ -71,7 +71,44 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
             if (column < totalColumns - 1)
                 total += columnBoundaryPressure(current, column, left: false, totalColumns);
 
-            return total * TrillUtils.TrillFactor(current) * boundary_pressure_weight;
+            return total * TrillUtils.TrillFactor(current) * boundary_pressure_weight * densityDampenFor(current, totalColumns);
+        }
+
+        // This targets rolls and other manipable high density patterns in higher key modes such as 7k because I couldnt manage to catch them in manipdetection for some reason
+        private static double densityDampenFor(ManiaDifficultyHitObject current, int totalColumns)
+        {
+            const double density_window_ms = 150.0;
+            const double density_dampen_start = 3.0; // only starts with 3 notes rolls or more
+            const double density_dampen_end = 5.0;
+            const double density_dampen_max = 0.5;
+
+            int liveNeighbours = 0;
+
+            for (int otherColumn = 0; otherColumn < totalColumns; otherColumn++)
+            {
+                if (otherColumn == current.Column)
+                continue;
+
+                double otherStart = current.LastStartTimeInColumn(otherColumn);
+
+                if (double.IsNegativeInfinity(otherStart))
+                    continue;
+
+                double otherDelta = current.StartTime - otherStart;
+
+                if (otherDelta < ChordUtils.CHORD_TOLERANCE_MS)
+                    continue;
+
+                if (otherDelta <= density_window_ms)
+                    liveNeighbours++;
+            }
+
+            if (liveNeighbours < density_dampen_start)
+                return 1.0;
+
+            double x = Math.Min(1.0, (liveNeighbours - density_dampen_start) / (density_dampen_end - density_dampen_start));
+            // smooth dampening https://www.desmos.com/calculator/0jvvip7qeq
+            return 1.0 - density_dampen_max * x * x * (3.0 - 2.0 * x);
         }
 
         /// <summary>
