@@ -135,9 +135,9 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
             const double held_long_note_weight = 0.75;
             const double held_speed_factor_offset = 0.08;
 
-            const double strain_peak = 5.0;
-            const double strain_sharpness = 0.13; // 3 gaussian parameters
-            const double strain_min = 0.1;
+            const double strain_peak = 4.5;
+            const double strain_sharpness = 0.15; // 3 gaussian parameters
+            const double strain_min = 0;
 
             int heldColumns = current.ConcurrentlyHeldColumns(ChordUtils.CHORD_TOLERANCE_MS);
             if (heldColumns == 0)
