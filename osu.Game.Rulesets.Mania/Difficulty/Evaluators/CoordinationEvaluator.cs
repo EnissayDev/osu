@@ -132,13 +132,24 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
         /// </summary>
         private static double calculateHoldDifficulty(ManiaDifficultyHitObject current)
         {
-            const double held_long_note_weight = 0.01003;
+            const double held_long_note_weight = 0.75;
             const double held_speed_factor_offset = 0.08;
 
-            int heldColumns = current.ConcurrentlyHeldColumns(ChordUtils.CHORD_TOLERANCE_MS);
-            double heldSpeedFactor = current.DeltaTime >= ChordUtils.CHORD_TOLERANCE_MS ? 1.0 / (current.DeltaTime / 1000.0 + held_speed_factor_offset) : 1.0;
+            const double strain_peak = 5.0;
+            const double strain_sharpness = 0.13; // 3 gaussian parameters
+            const double strain_min = 0.1;
 
-            return held_long_note_weight * Math.Sqrt(heldColumns) * heldSpeedFactor;
+            int heldColumns = current.ConcurrentlyHeldColumns(ChordUtils.CHORD_TOLERANCE_MS);
+            if (heldColumns == 0)
+                return 0.0;
+
+            double heldSpeedFactor = current.DeltaTime >= ChordUtils.CHORD_TOLERANCE_MS ? 1.0 / (current.DeltaTime / 1000.0 + held_speed_factor_offset) : 1.0;
+            double holdDifficulty = Math.Sqrt(heldColumns) * heldSpeedFactor;
+            double strainDelta = holdDifficulty - strain_peak;
+            // This is to target maps in this specific difficulty range, as higher difficulty should hardly benefit from hold ln difficulty (they are already valued in many other skills) https://www.desmos.com/calculator/jarb3mvwd3
+            double gaussianCurve = Math.Exp(-strain_sharpness * strainDelta * strainDelta) / (0.1 * holdDifficulty + 0.08) + strain_min;
+
+            return held_long_note_weight * holdDifficulty * gaussianCurve;
         }
     }
 }
