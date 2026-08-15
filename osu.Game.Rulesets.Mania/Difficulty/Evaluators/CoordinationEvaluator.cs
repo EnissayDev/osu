@@ -146,7 +146,7 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
             double heldSpeedFactor = current.DeltaTime >= ChordUtils.CHORD_TOLERANCE_MS ? 1.0 / (current.DeltaTime / 1000.0 + held_speed_factor_offset) : 1.0;
             double holdDifficulty = Math.Sqrt(heldColumns) * heldSpeedFactor;
             double strainDelta = holdDifficulty - strain_peak;
-            // This is to target maps in this specific difficulty range, as higher difficulty should hardly benefit from hold ln difficulty (they are already valued in many other skills) https://www.desmos.com/calculator/jarb3mvwd3
+            // This is to target maps in this specific difficulty range, as higher difficulty should hardly benefit from hold ln difficulty (they are already valued in many other skills) https://www.desmos.com/calculator/9s5ypsoyhf
             double gaussianCurve = Math.Exp(-strain_sharpness * strainDelta * strainDelta) / (0.1 * holdDifficulty + 0.08) + strain_min;
 
             return held_long_note_weight * holdDifficulty * gaussianCurve;
