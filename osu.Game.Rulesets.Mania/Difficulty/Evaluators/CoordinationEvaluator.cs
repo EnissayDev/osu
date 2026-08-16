@@ -84,6 +84,9 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
 
             int liveNeighbours = 0;
 
+            // Ignore 3+ notes chords, they are not overweighted
+            if (current.Row.Size >= 3) return 1.0;
+            
             for (int otherColumn = 0; otherColumn < totalColumns; otherColumn++)
             {
                 if (otherColumn == current.Column)
