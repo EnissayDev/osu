@@ -125,17 +125,18 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
             return load_per_extra_column * (depthInChord - 1) * ChordUtils.ChordRepeatDampen(current, columnDelta)
                    * (isChordjack ? ChordUtils.CHORDJACK_NERF : 1.0) * ChordUtils.ChordSpeedFactor(columnDelta);
         }
-
+        
         /// <summary>
         /// Long notes held in other columns take fingers out of play, and the less time there is between presses
         /// the more that costs.
         /// </summary>
         private static double calculateHoldDifficulty(ManiaDifficultyHitObject current)
         {
-            const double held_long_note_weight = 0.75;
+            const double held_long_note_weight = 0.4;
             const double held_speed_factor_offset = 0.08;
+            const double hold_start_multiplier_end_ms = 35.0;
 
-            const double strain_peak = 4.5;
+            const double strain_peak = 4.4;
             const double strain_sharpness = 0.15; // 3 gaussian parameters
             const double strain_min = 0;
 
@@ -146,10 +147,12 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
             double heldSpeedFactor = current.DeltaTime >= ChordUtils.CHORD_TOLERANCE_MS ? 1.0 / (current.DeltaTime / 1000.0 + held_speed_factor_offset) : 1.0;
             double holdDifficulty = Math.Sqrt(heldColumns) * heldSpeedFactor;
             double strainDelta = holdDifficulty - strain_peak;
-            // This is to target maps in this specific difficulty range, as higher difficulty should hardly benefit from hold ln difficulty (they are already valued in many other skills) https://www.desmos.com/calculator/9s5ypsoyhf
+            // This is to target maps in this specific difficulty range, as higher difficulty should hardly benefit from hold ln difficulty (they are already valued in many other skills) https://www.desmos.com/calculator/jarb3mvwd3
             double gaussianCurve = Math.Exp(-strain_sharpness * strainDelta * strainDelta) / (0.1 * holdDifficulty + 0.08) + strain_min;
+            // Grace notes are basically chords, they don't have a hold difficulty.
+            double holdStartMultiplier = DiffUtils.Smoothstep(current.DeltaTime, ChordUtils.CHORD_TOLERANCE_MS, hold_start_multiplier_end_ms);
 
-            return held_long_note_weight * holdDifficulty * gaussianCurve;
+            return holdStartMultiplier * held_long_note_weight * holdDifficulty * gaussianCurve;
         }
     }
 }
