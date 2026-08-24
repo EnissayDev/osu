@@ -88,6 +88,9 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
                     closestReleaseDelta = Math.Min(closestReleaseDelta, Math.Abs(current.EndTime - otherEndTime));
             }
 
+            if (double.IsPositiveInfinity(closestReleaseDelta))
+                return 0.0;
+            
             return weight * DiffUtils.Logistic(slope * (closestReleaseDelta - offset_ms), longNoteGate);
         }
     }
