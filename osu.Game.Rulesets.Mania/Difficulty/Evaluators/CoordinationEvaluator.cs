@@ -132,27 +132,25 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
         /// </summary>
         private static double calculateHoldDifficulty(ManiaDifficultyHitObject current)
         {
-            const double held_long_note_weight = 0.4;
+            const double held_long_note_weight = 0.3;
             const double held_speed_factor_offset = 0.08;
-            const double hold_start_multiplier_end_ms = 35.0;
+            const double hold_start_cap_end_ms = 35.0;
 
-            const double strain_peak = 4.4;
-            const double strain_sharpness = 0.15; // 3 gaussian parameters
-            const double strain_min = 0;
+            // High difficulty cap
+            const double soft_ceiling_midpoint = 2.719;
 
             int heldColumns = current.ConcurrentlyHeldColumns(ChordUtils.CHORD_TOLERANCE_MS);
             if (heldColumns == 0)
                 return 0.0;
 
             double heldSpeedFactor = current.DeltaTime >= ChordUtils.CHORD_TOLERANCE_MS ? 1.0 / (current.DeltaTime / 1000.0 + held_speed_factor_offset) : 1.0;
-            double holdDifficulty = Math.Sqrt(heldColumns) * heldSpeedFactor;
-            double strainDelta = holdDifficulty - strain_peak;
-            // This is to target maps in this specific difficulty range, as higher difficulty should hardly benefit from hold ln difficulty (they are already valued in many other skills) https://www.desmos.com/calculator/jarb3mvwd3
-            double gaussianCurve = Math.Exp(-strain_sharpness * strainDelta * strainDelta) / (0.1 * holdDifficulty + 0.08) + strain_min;
+            double columnFactor = 1.0 / (-25.0 / 66.0 * heldColumns - 5.0 / 11.0) + 2.2; // https://www.desmos.com/calculator/aoqjrgqqht current vs previous sqrt(column)
+            double holdDifficulty = columnFactor * heldSpeedFactor;
+            double difficultyCap = soft_ceiling_midpoint / (soft_ceiling_midpoint + holdDifficulty);
             // Grace notes are basically chords, they don't have a hold difficulty.
-            double holdStartMultiplier = DiffUtils.Smoothstep(current.DeltaTime, ChordUtils.CHORD_TOLERANCE_MS, hold_start_multiplier_end_ms);
+            double holdStartCap = DiffUtils.Smoothstep(current.DeltaTime, ChordUtils.CHORD_TOLERANCE_MS, hold_start_cap_end_ms);
 
-            return holdStartMultiplier * held_long_note_weight * holdDifficulty * gaussianCurve;
+            return holdStartCap * held_long_note_weight * holdDifficulty * difficultyCap;
         }
     }
 }
