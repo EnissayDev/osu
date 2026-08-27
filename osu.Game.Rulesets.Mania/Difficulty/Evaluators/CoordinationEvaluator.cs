@@ -125,20 +125,32 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
             return load_per_extra_column * (depthInChord - 1) * ChordUtils.ChordRepeatDampen(current, columnDelta)
                    * (isChordjack ? ChordUtils.CHORDJACK_NERF : 1.0) * ChordUtils.ChordSpeedFactor(columnDelta);
         }
-
+        
         /// <summary>
         /// Long notes held in other columns take fingers out of play, and the less time there is between presses
         /// the more that costs.
         /// </summary>
         private static double calculateHoldDifficulty(ManiaDifficultyHitObject current)
         {
-            const double held_long_note_weight = 0.01003;
+            const double held_long_note_weight = 0.3;
             const double held_speed_factor_offset = 0.08;
+            const double hold_start_cap_end_ms = 35.0;
+
+            // High difficulty cap
+            const double soft_ceiling_midpoint = 2.719;
 
             int heldColumns = current.ConcurrentlyHeldColumns(ChordUtils.CHORD_TOLERANCE_MS);
-            double heldSpeedFactor = current.DeltaTime >= ChordUtils.CHORD_TOLERANCE_MS ? 1.0 / (current.DeltaTime / 1000.0 + held_speed_factor_offset) : 1.0;
+            if (heldColumns == 0)
+                return 0.0;
 
-            return held_long_note_weight * Math.Sqrt(heldColumns) * heldSpeedFactor;
+            double heldSpeedFactor = current.DeltaTime >= ChordUtils.CHORD_TOLERANCE_MS ? 1.0 / (current.DeltaTime / 1000.0 + held_speed_factor_offset) : 1.0;
+            double columnFactor = 1.0 / (-25.0 / 66.0 * heldColumns - 5.0 / 11.0) + 2.2; // https://www.desmos.com/calculator/aoqjrgqqht current vs previous sqrt(column)
+            double holdDifficulty = columnFactor * heldSpeedFactor;
+            double difficultyCap = soft_ceiling_midpoint / (soft_ceiling_midpoint + holdDifficulty);
+            // Grace notes are basically chords, they don't have a hold difficulty.
+            double holdStartCap = DiffUtils.Smoothstep(current.DeltaTime, ChordUtils.CHORD_TOLERANCE_MS, hold_start_cap_end_ms);
+
+            return holdStartCap * held_long_note_weight * holdDifficulty * difficultyCap;
         }
     }
 }
