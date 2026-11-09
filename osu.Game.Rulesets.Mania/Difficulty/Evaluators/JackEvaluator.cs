@@ -13,7 +13,7 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
     {
         private static double heldPressureOf(HandLoad handLoad) => handLoad.HeldShare;
 
-        public static double FingerCost(double rate, double chordedness)
+        public static double FingerCost(double rate, double fill)
         {
             const double base_slope = 0.00875;
             const double peak_gain = 0.34;
@@ -30,7 +30,7 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
 
             return base_slope * rate
                    + peak_gain * peak_width * (Math.Sqrt(Math.PI) / 2.0) * bell
-                   + chord_slope * chordedness * ManiaDiffUtils.Softplus(rate - chord_rate, chord_width);
+                   + chord_slope * fill * ManiaDiffUtils.Softplus(rate - chord_rate, chord_width);
         }
 
         private static double chordWidthBonus(HandLoad handLoad, ManiaRow row)
@@ -53,7 +53,7 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
             return 1.0 - relief * DiffUtils.Smoothstep(handLoad.Occupancy, locked_lo, locked_hi);
         }
 
-        private static double chordednessOf(HandLoad handLoad)
+        private static double fillOf(HandLoad handLoad)
         {
             const double fill_lo = 0.55;
             const double fill_hi = 1.0;
@@ -86,7 +86,7 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
             if (handLoad.Throughput <= 0)
                 return 0.0;
 
-            double finger = FingerCost(handLoad.EffectiveRate, chordednessOf(handLoad));
+            double finger = FingerCost(handLoad.EffectiveRate, fillOf(handLoad));
 
             if (finger <= 0)
                 return 0.0;
