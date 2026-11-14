@@ -19,7 +19,7 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Preprocessing
             double chordTolerance = ChordUtils.ToleranceAt(clockRate);
             List<ManiaRow> rows = groupIntoRows(objects, totalColumns, chordTolerance);
 
-            trackLoad(rows, totalColumns, chordTolerance);
+            trackLoad(rows, totalColumns);
 
             ManiaRepetitionPreprocessor.ProcessAndAssign(rows);
 
@@ -64,14 +64,12 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Preprocessing
             return rows;
         }
 
-        private static void trackLoad(List<ManiaRow> rows, int totalColumns, double chordTolerance)
+        private static void trackLoad(List<ManiaRow> rows, int totalColumns)
         {
             double[] columnGap = new double[totalColumns];
             double[] lastStart = new double[totalColumns];
-            double[] lastEnd = new double[totalColumns];
 
             Array.Fill(lastStart, double.NegativeInfinity);
-            Array.Fill(lastEnd, double.NegativeInfinity);
 
             double[] handGap = new double[2];
             double[] handLastStart = { double.NegativeInfinity, double.NegativeInfinity };
@@ -79,15 +77,9 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Preprocessing
             double rowGap = 0.0;
             double lastRowStart = double.NegativeInfinity;
 
-            double fingers = HandLayout.FingerCount(totalColumns);
-
             foreach (var row in rows)
             {
                 double time = row.StartTime;
-
-                // Held state is read before this row's presses overwrite lastStart / lastEnd.
-                double heldLeft = heldFingersOf(lastStart, lastEnd, time, chordTolerance, ManiaHand.Left, totalColumns);
-                double heldRight = heldFingersOf(lastStart, lastEnd, time, chordTolerance, ManiaHand.Right, totalColumns);
 
                 foreach (var note in row.Objects)
                 {
@@ -95,7 +87,6 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Preprocessing
 
                     columnGap[column] = legacyGap(columnGap[column], time - lastStart[column]);
                     lastStart[column] = time;
-                    lastEnd[column] = Math.Max(lastEnd[column], note.EndTime);
                 }
 
                 for (int hand = 0; hand < 2; hand++)
@@ -116,8 +107,7 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Preprocessing
                     rates[column] = rateAt(columnGap[column], time - lastStart[column]);
 
                 row.Load = new RowLoad(rates,
-                    handLoadOf(rates, ManiaHand.Left, rateAt(handGap[0], time - handLastStart[0]), heldLeft, fingers, totalColumns),
-                    handLoadOf(rates, ManiaHand.Right, rateAt(handGap[1], time - handLastStart[1]), heldRight, fingers, totalColumns),
+                    new[] { rateAt(handGap[0], time - handLastStart[0]), rateAt(handGap[1], time - handLastStart[1]) },
                     rateAt(rowGap, 0.0));
             }
         }
@@ -140,45 +130,6 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Preprocessing
                 return 0.0;
 
             return meanGap > 0 ? 1000.0 / Math.Max(meanGap, sinceLast) : 0.0;
-        }
-
-        private static double heldFingersOf(double[] lastStart, double[] lastEnd, double time, double chordTolerance, ManiaHand hand, int totalColumns)
-        {
-            double held = 0.0;
-
-            for (int column = 0; column < totalColumns; column++)
-            {
-                double share = HandLayout.ShareOf(column, totalColumns, hand);
-
-                if (share <= 0)
-                    continue;
-
-                bool mid = lastEnd[column] > time + chordTolerance && lastStart[column] < time - chordTolerance;
-
-                if (mid)
-                    held += share * HoldUtils.HoldGateOf(lastEnd[column] - lastStart[column]);
-            }
-
-            return held;
-        }
-
-        private static HandLoad handLoadOf(double[] rates, ManiaHand hand, double rowRate, double heldFingers, double fingerCapacity, int totalColumns)
-        {
-            double throughput = 0.0;
-            double secondMoment = 0.0;
-
-            for (int column = 0; column < totalColumns; column++)
-            {
-                double share = HandLayout.ShareOf(column, totalColumns, hand);
-
-                if (share <= 0)
-                    continue;
-
-                throughput += share * rates[column];
-                secondMoment += share * rates[column] * rates[column];
-            }
-
-            return new HandLoad(throughput, secondMoment, rowRate, heldFingers, fingerCapacity);
         }
     }
 }

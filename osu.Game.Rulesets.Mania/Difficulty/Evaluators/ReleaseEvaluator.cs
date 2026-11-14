@@ -12,7 +12,7 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
 {
     public static class ReleaseEvaluator
     {
-        private const double release_weight = 3.82;
+        private const double release_weight = 3.056;
 
         /// <summary>
         /// Holds longer than this are all the same amount of work to keep held, so the duration is capped here
@@ -36,21 +36,15 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
                 return releaseDifficulty;
 
             double duration = Math.Min(current.EndTime - current.StartTime, max_long_note_duration_ms);
-            double longNoteGate = longNoteGateOf(duration);
+            double longNoteGate = HoldUtils.HoldGateOf(duration);
 
             releaseDifficulty += calculateReleaseSpeedBonus(current, longNoteGate);
             releaseDifficulty += calculateReleaseWhileHolds(current, longNoteGate);
 
             releaseDifficulty *= current.HeldNoteMultiplier;
 
-            return releaseDifficulty * release_weight * 0.8;
+            return releaseDifficulty * release_weight;
         }
-
-        /// <summary>
-        /// How much of a hold note this object really is. A hold barely longer than a tap ends in the same
-        /// motion that started it, so short durations fade out rather than switching off at a hard length.
-        /// </summary>
-        private static double longNoteGateOf(double duration) => DiffUtils.Logistic(duration, 110.90068, 0.07);
 
         /// <summary>
         /// Releases very close together are harder to time apart, so the closest release in any other column that
@@ -58,10 +52,6 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
         /// </summary>
         private static double calculateReleaseSpeedBonus(ManiaDifficultyHitObject current, double longNoteGate)
         {
-            const double slope = 0.1;
-            const double offset_ms = 30.0;
-            const double weight = 0.2;
-
             double closestReleaseDelta = double.PositiveInfinity;
 
             foreach (double? endTime in current.LastConcurrentlyReleasedHolds.Select(o => o?.EndTime))
@@ -75,7 +65,7 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
             if (double.IsPositiveInfinity(closestReleaseDelta))
                 return 0.0;
 
-            return weight * DiffUtils.Logistic(slope * (closestReleaseDelta - offset_ms), longNoteGate);
+            return 0.2 * DiffUtils.Logistic(0.1 * (closestReleaseDelta - 30.0), longNoteGate);
         }
 
         /// <summary>
@@ -85,8 +75,12 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
         private static double calculateReleaseWhileHolds(ManiaDifficultyHitObject current, double longNoteGate)
         {
             const double release_long_note_weight = 0.45;
+            const double next_note_relief_multiplier = 0.77;
 
-            return release_long_note_weight * (current.HeldNoteMultiplier - 1.0) * longNoteGate * nextNoteNerf(current);
+            // Nerf
+            double nextNote = 1.0 - next_note_relief_multiplier * nextNoteRelief(current);
+
+            return release_long_note_weight * (current.HeldNoteMultiplier - 1.0) * longNoteGate * nextNote;
         }
 
         /// <summary>
@@ -94,26 +88,14 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
         /// rebound once the next note is far enough away that the motion is no longer being overlapped.
         /// A note that starts right after a LN doesn't really need the player to think about release.
         /// </summary>
-        private static double nextNoteNerf(ManiaDifficultyHitObject current)
+        private static double nextNoteRelief(ManiaDifficultyHitObject current)
         {
-            const double min_ms = 110.0;
-            const double max_ms = 180.0;
-            const double lowest = 0.23;
-
             ManiaDifficultyHitObject? nextInColumn = current.NextInColumn(0);
 
             if (nextInColumn == null)
-                return 1.0;
+                return 0.0;
 
-            double gap = nextInColumn.StartTime - current.EndTime;
-
-            if (gap <= min_ms)
-                return lowest;
-
-            if (gap >= max_ms)
-                return 1.0;
-
-            return lowest + (1 - lowest) * DiffUtils.Smoothstep(gap, min_ms, max_ms);
+            return DiffUtils.Smoothstep(nextInColumn.StartTime - current.EndTime, 180.0, 110.0);
         }
     }
 }

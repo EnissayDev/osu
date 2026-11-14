@@ -9,11 +9,6 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
 {
     public static class AnchorEvaluator
     {
-        /// <summary>
-        /// How much more a repeat is worth for sitting in a section that keeps returning to one column.
-        /// </summary>
-        private const double anchor_buff = 0.36527;
-
         private const double uneven = 0.3;
         private const double anchored = 0.9;
 
@@ -22,16 +17,16 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
         /// </summary>
         private const int tier_count = 3;
 
-        public static double EvaluateMultiplierOf(RowLoad load)
+        /// <summary>
+        /// How much more a repeat is worth for sitting in a section that keeps returning to one column.
+        /// </summary>
+        public static double EvaluateBonusOf(RowLoad load)
         {
-            if (load.FingerRates.Length < 2)
-                return 1.0;
-
             if (HandLayout.FingerCount(load.FingerRates.Length) < 2.0)
-                return 1.0;
+                return 0.0;
 
             double anchorValue = anchorValueOf(load.FingerRates);
-            double multiplier = 1.0;
+            double bonus = 0.0;
 
             // Each tier walks its gate the same fraction of the way towards a section that never leaves one column,
             // so a merely uneven section only opens the first of them while a running man or a jackhammer pattern opens all
@@ -43,12 +38,12 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
                 double gateEnd = anchored + (1.0 - anchored) * step;
 
                 // The last tier means that the hand never leaves the column.
-                double buff = tier == tier_count - 1 ? anchor_buff * tier_count : anchor_buff;
+                double weight = tier == tier_count - 1 ? tier_count : 1.0;
 
-                multiplier += buff * DiffUtils.Smoothstep(anchorValue, gateStart, gateEnd);
+                bonus += weight * DiffUtils.Smoothstep(anchorValue, gateStart, gateEnd);
             }
 
-            return multiplier;
+            return bonus;
         }
 
         private static double anchorValueOf(double[] rates)

@@ -10,6 +10,10 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Utils
         private const double long_note_gate_ms = 110.90;
         private const double long_note_gate_slope = 0.07;
 
+        /// <summary>
+        /// How much of a hold note this object really is. A hold barely longer than a tap ends in the same
+        /// motion that started it, so short durations fade out rather than switching off at a hard length.
+        /// </summary>
         public static double HoldGateOf(double duration) => DiffUtils.Logistic(duration, long_note_gate_ms, long_note_gate_slope);
     }
 }

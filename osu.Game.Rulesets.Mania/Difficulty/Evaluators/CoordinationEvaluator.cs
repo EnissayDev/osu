@@ -36,27 +36,6 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
         }
 
         /// <summary>
-        /// Two hands only have so many fingers, so past a point more columns being live at once stops adding
-        /// difficulty as fast. Bends the top of the range over without ever capping it outright.
-        /// </summary>
-        ///
-        /// May not be needed anymore, higher SR is already kinda compressed.
-        ///
-        /* private static double saturate(double strain)
-        {
-            const double threshold = 20.0;
-            const double strength = 0.5;
-            const double width = 1.5;
-
-            // A softplus of the excess above the threshold.
-            // See https://www.desmos.com/calculator/jgnbehwngr
-            double z = (strain - threshold) / width;
-            double softExcess = width * (Math.Max(z, 0.0) + Math.Log(1.0 + Math.Exp(-Math.Abs(z))));
-
-            return strain - strength * softExcess;
-        } */
-
-        /// <summary>
         /// Calculates the difficulty of both column boundaries for this column, with a boundary being the hypothetical "middle" of two columns.
         /// </summary>
         private static double calculateBoundaryPressure(ManiaDifficultyHitObject current)
@@ -82,9 +61,6 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
         /// </summary>
         private static double columnBoundaryPressure(ManiaDifficultyHitObject current, int column, bool left, int totalColumns)
         {
-            const double scale_ms = 1300.0;
-            const double min_delta_ms = 35.0;
-
             // Past this the neighbouring column has had time to be forgotten about.
             const double activity_window_ms = 450.0;
 
@@ -104,7 +80,7 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
             int boundaryIndex = left ? column : column + 1;
 
             // Capping intensity to nerf graces
-            double intensity = Math.Min(scale_ms / (adjacentDelta + min_delta_ms), 20.0);
+            double intensity = Math.Min(1300.0 / (adjacentDelta + 35.0), 20.0);
             double coefficient = CrossColumnUtils.ColumnBoundaryMultiplier(boundaryIndex, totalColumns);
             bool otherActive = adjacentDelta <= activity_window_ms;
 
@@ -187,14 +163,6 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
         ///                           O O===|
         private static double calculateShieldDifficulty(ManiaDifficultyHitObject current)
         {
-            const double shield_weight = 1.00;
-
-            const double jack_scale_ms = 120.0;
-            const double jack_intensity = 320000.0;
-
-            const double min_shield_ms = 150;
-            const double full_shield_ms = 600;
-
             // Only a note that is actually being held can be a shield.
             double holdLength = current.EndTime - current.StartTime;
 
@@ -204,9 +172,9 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
             if (current.PrevInColumn(0) is null)
                 return 0.0;
 
-            double intensity = Math.Min(jack_intensity / (current.ColumnDelta * (current.ColumnDelta + jack_scale_ms)), 20.0);
+            double intensity = Math.Min(320000.0 / (current.ColumnDelta * (current.ColumnDelta + 120.0)), 20.0);
 
-            return shield_weight * intensity * DiffUtils.ReverseLerp(holdLength, min_shield_ms, full_shield_ms);
+            return intensity * DiffUtils.ReverseLerp(holdLength, 150.0, 600.0);
         }
 
         /// <summary>

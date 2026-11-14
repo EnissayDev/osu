@@ -30,17 +30,26 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
             // A repeat in the same column is one finger doing the work of two, so it taps slower than its gap suggests.
             const double jack_speed_nerf = 0.5;
 
+            const double sustain_multiplier = 0.6;
+            const double spike_relief_multiplier = 0.5;
+            const double repetition_relief_multiplier = 0.95;
+            const double previous_row_relief_multiplier = 0.15;
+
             double tapRate = 1000.0 / (hitObject.DeltaTime + tap_rate_offset_ms);
-            tapRate *= speedGrowth(hitObject);
+            var (spike, sustain) = speedGrowthOf(hitObject);
 
             bool isJack = hitObject.Previous() is ManiaDifficultyHitObject previous && previous.Column == hitObject.Column;
 
+            // Bonus
+            double sustainReward = 1.0 + sustain_multiplier * sustain;
+
+            // Nerfs
+            double spikeNerf = 1.0 - spike_relief_multiplier * spike;
             double patternMultiplier = isJack ? jack_speed_nerf : 1.0;
+            double settled = 1.0 - repetition_relief_multiplier * hitObject.Row.Repetition;
+            double previousRow = 1.0 - previous_row_relief_multiplier * previousRowRelief(hitObject);
 
-            const double repetition_relief = 0.95;
-            double settled = 1.0 - repetition_relief * hitObject.Row.Repetition;
-
-            return tapRate * patternMultiplier * settled * previousRowMultiplier(hitObject) * speed_weight;
+            return tapRate * spikeNerf * sustainReward * patternMultiplier * settled * previousRow * speed_weight;
         }
 
         /// <summary>
@@ -49,20 +58,9 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
         /// kept mild (unlike coordination's, which shapes chording) so it only trims isolated refreshes out of a
         /// stream rather than reshaping the stream itself.
         /// </summary>
-        private static double previousRowMultiplier(ManiaDifficultyHitObject hitObject)
+        private static double previousRowRelief(ManiaDifficultyHitObject hitObject)
         {
-            const double min_share = 0.85;
-            const double idle_ratio = 3.0;
-            const double idle_ratio_full = 6.0;
-
-            double flow = hitObject.DeltaTime;
-
-            if (flow <= 0.0)
-                return 1.0;
-
-            double ratio = hitObject.ColumnDelta / flow;
-
-            return 1.0 - DiffUtils.Smoothstep(ratio, idle_ratio, idle_ratio_full) * (1 - min_share);
+            return DiffUtils.Smoothstep(hitObject.ColumnDelta / hitObject.DeltaTime, 3.0, 6.0);
         }
 
         /// <summary>
@@ -70,7 +68,7 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
         /// a row much faster than its previous history gets supressed, while sustained speed at any density passes entirely.
         /// Sustained density additionally earns a reward, except where it is a cycle the hand is already holding.
         /// </summary>
-        private static double speedGrowth(ManiaDifficultyHitObject hitObject)
+        private static (double spike, double sustain) speedGrowthOf(ManiaDifficultyHitObject hitObject)
         {
             const double window_ms = 250.0;
             const double sustain_window_ms = 1000.0;
@@ -88,7 +86,7 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
                     rows++;
             }
 
-            double spikeNerf = 1.0;
+            double spike = 0.0;
 
             if (rows >= 4)
             {
@@ -97,19 +95,19 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
                 if (!double.IsPositiveInfinity(rowGap) && rowGap > 0.0)
                 {
                     double ratio = (1000.0 / rowGap) / (rows / (window_ms / 1000.0));
-                    spikeNerf = 1.0 - 0.5 * DiffUtils.Smoothstep(ratio, 2.0, 4.0);
+                    spike = DiffUtils.Smoothstep(ratio, 2.0, 4.0);
                 }
             }
 
-            double sustainReward = 0.0;
+            double sustain = 0.0;
 
             if (longRows >= 20)
             {
                 double longEven = 1.0 - (double)longShared / longRows;
-                sustainReward = 0.6 * DiffUtils.Smoothstep(longRows, 20.0, 30.0) * DiffUtils.Smoothstep(longEven, 0.6, 0.8) * (1.0 - hitObject.Row.Repetition);
+                sustain = DiffUtils.Smoothstep(longRows, 20.0, 30.0) * DiffUtils.Smoothstep(longEven, 0.6, 0.8) * (1.0 - hitObject.Row.Repetition);
             }
 
-            return spikeNerf * (1.0 + sustainReward);
+            return (spike, sustain);
         }
     }
 }

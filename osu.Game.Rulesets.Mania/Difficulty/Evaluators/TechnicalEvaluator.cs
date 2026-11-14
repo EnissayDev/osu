@@ -13,16 +13,10 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
     {
         private const double technical_weight = 4.88;
 
-        private const double minijack_ms_slow = 140.0;
-        private const double minijack_ms_fast = 75.0;
-
         /// <summary>
         /// How many rows to look back when deciding whether the current passage is a chordjack.
         /// </summary>
         private const int chordjack_window_rows = 8;
-
-        private const double chordjack_density_start = 0.30;
-        private const double chordjack_density_end = 0.50;
 
         /// <summary>
         /// A repeat only counts as chordjack context when it is at most this many times slower than the
@@ -42,13 +36,17 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
         /// </summary>
         public static double EvaluateDifficultyOf(ManiaDifficultyHitObject hitObject, double rhythmIrregularity, double patternVariety, double windowedIrregularity)
         {
+            const double rhythm_multiplier = 0.9;
+            const double chord_width_multiplier = 1.9;
+            const double minijack_multiplier = 4.5;
+
             double columnComplexity = evaluateColumnComplexityOf(hitObject);
             double speedFactor = 1.0 / (hitObject.DeltaTime / 1000.0 + 0.060);
             double readingPressure = readingPressureOf(hitObject);
 
             // Mixed rhythm is worth most when it is neither perfectly even nor unreadably loose.
             // See https://www.desmos.com/calculator/2nrishjcm6
-            double rhythmAmplifier = 1.0 + 0.9 * readingPressure * DiffUtils.BellCurve(windowedIrregularity, 0.15, 0.085);
+            double rhythmAmplifier = 1.0 + rhythm_multiplier * readingPressure * DiffUtils.BellCurve(windowedIrregularity, 0.15, 0.085);
 
             // A shape is a spacing together with the direction the hand moved, so a passage can count up plenty of
             // distinct shapes purely by visiting its columns in a different order while its spacing never changes
@@ -66,7 +64,11 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
 
             double complexity = Math.Max(spacingComplexity, varietyFloor);
 
-            double difficulty = complexity * speedFactor * rhythmAmplifier * chordWidth(hitObject) * minijackPressure(hitObject);
+            // Bonuses
+            double chordWidth = 1.0 + chord_width_multiplier * chordWidthBonus(hitObject);
+            double minijack = 1.0 + minijack_multiplier * minijackPressure(hitObject);
+
+            double difficulty = complexity * speedFactor * rhythmAmplifier * chordWidth * minijack;
 
             return difficulty * technical_weight;
         }
@@ -133,7 +135,7 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
         /// How often the passage around this row plays chords too wide for one hand shape, and how much the hand
         /// has to keep changing shape to hit them. The same wide chord over and over barely counts.
         /// </summary>
-        private static double chordWidth(ManiaDifficultyHitObject hitObject)
+        private static double chordWidthBonus(ManiaDifficultyHitObject hitObject)
         {
             var passage = readPassageAround(hitObject);
 
@@ -141,7 +143,7 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
             double moves = DiffUtils.Smoothstep(passage.jackShare, 0.90, 0.65);
             double reforms = DiffUtils.Smoothstep(passage.shapeChange, 0.25, 0.65);
 
-            return (1.0 + 1.9 * density * moves * reforms);
+            return density * moves * reforms;
         }
 
         /// <summary>
@@ -268,17 +270,6 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
         }
 
         /// <summary>
-        /// A passage that keeps its spacing changing and is written in many shapes are hard to play no matter how
-        /// familiar the individual shapes are. It forces the hand to dose its strain according to the bursts.
-        /// </summary>
-        private static double burstReward(double patternVariety, double windowedIrregularity)
-        {
-            const double burst_weight = 0.0;
-
-            return burst_weight * patternVariety * DiffUtils.Smoothstep(windowedIrregularity, 0.16, 0.30);
-        }
-
-        /// <summary>
         /// How much a same-column repeat in the middle of a flow adds to the pattern's technical demand.
         /// The repeat has to be fast, dense, and a genuine speed-up over the column's previous gap; when
         /// other columns are already jacking at the same rate, the repeat is less of a standalone spike.
@@ -331,39 +322,36 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
 
             double density = repeatedNotes / totalNotes;
 
-            return 1.0 - DiffUtils.Smoothstep(density, chordjack_density_start, chordjack_density_end);
+            return DiffUtils.Smoothstep(density, 0.50, 0.30);
         }
 
         /// <summary>
         /// The minijack pressure of one note in a row.
         /// </summary>
-        /// please work
         private static double minijackPressureOfNote(ManiaDifficultyHitObject hitObject)
         {
-            const double minijack_weight = 4.5;
-
             // A minijack is worth less when other columns are jacking just as hard.
             const double other_jack_penalty = 0.75;
             const double other_jack_margin = 1.2;
             const double minijack_mult_floor = 0.02;
 
             if (hitObject.PrevInColumn(0) is not { } previousNote)
-                return 1.0;
+                return 0.0;
 
             if (isHandAlternation(hitObject, previousNote))
-                return 1.0;
+                return 0.0;
 
             double jackDelta = hitObject.StartTime - previousNote.StartTime;
 
-            double multiplier = DiffUtils.Smoothstep(jackDelta, minijack_ms_slow, minijack_ms_fast);
+            double multiplier = DiffUtils.Smoothstep(jackDelta, 140.0, 75.0);
 
             if (multiplier <= 0.0)
-                return 1.0;
+                return 0.0;
 
             double isolation = minijackIsolation(hitObject, jackDelta);
 
             if (isolation <= 0.0)
-                return 1.0;
+                return 0.0;
 
             // A minijack only reads as one when the hand is already moving through a dense passage.
             int rowCount = 0;
@@ -374,7 +362,7 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
             multiplier *= DiffUtils.Smoothstep(rowCount, 4.0, 5.5);
 
             if (multiplier <= 0.0)
-                return 1.0;
+                return 0.0;
 
             // Reward a repeat that is faster than the gap the column had before it.
             double acceleration = 1.0;
@@ -382,7 +370,7 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
             if (previousNote.PrevInColumn(0) is { } beforePrevious)
             {
                 acceleration = (previousNote.StartTime - beforePrevious.StartTime) / Math.Max(jackDelta, 1.0);
-                acceleration = DiffUtils.Smoothstep(Math.Min(acceleration, 5.0), 1.0, 2.5);
+                acceleration = DiffUtils.Smoothstep(acceleration, 1.0, 2.5);
             }
 
             // If other columns are already repeating at a similar rate, this is not a fresh minijack.
@@ -406,7 +394,7 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
 
             multiplier *= Math.Max(otherJackMultiplier, minijack_mult_floor);
 
-            return 1 + minijack_weight * multiplier * acceleration * isolation;
+            return multiplier * acceleration * isolation;
         }
 
         private static bool isHandAlternation(ManiaDifficultyHitObject hitObject, ManiaDifficultyHitObject previousNote)

@@ -3,8 +3,5 @@
 
 namespace osu.Game.Rulesets.Mania.Difficulty.Preprocessing.Patterning
 {
-    public sealed record RowLoad(double[] FingerRates, HandLoad Left, HandLoad Right, double RowRate)
-    {
-        public HandLoad Of(ManiaHand hand) => hand == ManiaHand.Left ? Left : Right;
-    }
+    public sealed record RowLoad(double[] FingerRates, double[] HandRates, double RowRate);
 }
