@@ -37,7 +37,10 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
 
             double patternMultiplier = isJack ? jack_speed_nerf : 1.0;
 
-            return tapRate * patternMultiplier * previousRowMultiplier(hitObject) * speed_weight;
+            const double repetition_relief = 0.95;
+            double settled = 1.0 - repetition_relief * hitObject.Row.Repetition;
+
+            return tapRate * patternMultiplier * settled * previousRowMultiplier(hitObject) * speed_weight;
         }
 
         /// <summary>
@@ -65,7 +68,7 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
         /// <summary>
         /// Soften growth because a short speed spike does not demand as much as a sustained difficulty:
         /// a row much faster than its previous history gets supressed, while sustained speed at any density passes entirely.
-        /// Sustained density additionally earns a reward, multiplied by manipulation so flagged mash stays out.
+        /// Sustained density additionally earns a reward, except where it is a cycle the hand is already holding.
         /// </summary>
         private static double speedGrowth(ManiaDifficultyHitObject hitObject)
         {
@@ -103,7 +106,7 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
             if (longRows >= 20)
             {
                 double longEven = 1.0 - (double)longShared / longRows;
-                sustainReward = 0.6 * DiffUtils.Smoothstep(longRows, 20.0, 30.0) * DiffUtils.Smoothstep(longEven, 0.6, 0.8);
+                sustainReward = 0.6 * DiffUtils.Smoothstep(longRows, 20.0, 30.0) * DiffUtils.Smoothstep(longEven, 0.6, 0.8) * (1.0 - hitObject.Row.Repetition);
             }
 
             return spikeNerf * (1.0 + sustainReward);
