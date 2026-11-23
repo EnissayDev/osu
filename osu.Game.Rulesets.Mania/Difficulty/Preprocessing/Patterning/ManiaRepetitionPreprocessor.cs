@@ -23,6 +23,7 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Preprocessing.Patterning
         {
             int count = rows.Count;
             double[] repetition = new double[count];
+            double[] repetitionEvenness = new double[count];
 
             for (int period = 2; period <= max_period; period++)
             {
@@ -75,13 +76,26 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Preprocessing.Patterning
                     if (sequence <= 0)
                         continue;
 
+                    double evenness = evennessOf(rows, first, last);
+
                     for (int row = first; row <= last; row++)
-                        repetition[row] = Math.Max(repetition[row], sequence);
+                    {
+                        if (sequence > repetition[row])
+                        {
+                            repetition[row] = sequence;
+                            repetitionEvenness[row] = evenness;
+                        }
+                        else if (Math.Abs(sequence - repetition[row]) < 1e-9)
+                            repetitionEvenness[row] = Math.Max(repetitionEvenness[row], evenness);
+                    }
                 }
             }
 
             for (int i = 0; i < count; i++)
+            {
                 rows[i].Repetition = repetition[i];
+                rows[i].RepetitionEvenness = repetitionEvenness[i];
+            }
         }
 
         private static double alternationOf(IReadOnlyList<ManiaRow> rows, int index, int period)
@@ -97,6 +111,40 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Preprocessing.Patterning
             }
 
             return DiffUtils.Smoothstep((double)clear / period, alternation_lo, alternation_hi);
+        }
+
+        private static double evennessOf(IReadOnlyList<ManiaRow> rows, int first, int last)
+        {
+            int totalColumns = rows[first].TotalColumns;
+            int[] noteCounts = new int[totalColumns];
+
+            for (int i = first; i <= last; i++)
+            {
+                foreach (int column in rows[i].Columns)
+                    noteCounts[column]++;
+            }
+
+            int minCount = int.MaxValue;
+            int maxCount = 0;
+            int activeColumns = 0;
+
+            for (int column = 0; column < totalColumns; column++)
+            {
+                if (noteCounts[column] == 0)
+                    continue;
+
+                activeColumns++;
+                minCount = Math.Min(minCount, noteCounts[column]);
+                maxCount = Math.Max(maxCount, noteCounts[column]);
+            }
+
+            if (activeColumns == 0)
+                return 0.0;
+
+            if (activeColumns == 1)
+                return 1.0;
+
+            return (double)minCount / maxCount;
         }
     }
 }
