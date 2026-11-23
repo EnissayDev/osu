@@ -35,6 +35,11 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Preprocessing.Patterning
 
         public double Repetition;
 
+        /// <summary>
+        /// How evenly the repeated cycle spreads its notes across the columns it actually uses.
+        /// </summary>
+        public double RepetitionEvenness;
+
         private readonly IReadOnlyList<ManiaRow> rows;
 
         public ManiaRow(int[] columns, double startTime, List<ManiaDifficultyHitObject> objects, int index, int totalColumns, IReadOnlyList<ManiaRow> rows)

@@ -1,6 +1,7 @@
 ﻿// Copyright (c) ppy Pty Ltd <contact@ppy.sh>. Licensed under the MIT Licence.
 // See the LICENCE file in the repository root for full licence text.
 
+using System;
 using osu.Game.Rulesets.Difficulty.Utils;
 using osu.Game.Rulesets.Mania.Difficulty.Preprocessing;
 using osu.Game.Rulesets.Mania.Difficulty.Utils;
@@ -9,7 +10,7 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
 {
     public static class SpeedEvaluator
     {
-        private const double speed_weight = 2.4;
+        private const double speed_weight = 2.2;
 
         /// <summary>
         /// Evaluates the difficulty of tapping the current note, based on:
@@ -28,12 +29,9 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
             const double tap_rate_offset_ms = 36;
 
             // A repeat in the same column is one finger doing the work of two, so it taps slower than its gap suggests.
-            const double jack_speed_nerf = 0.5;
-
-            const double sustain_multiplier = 0.6;
-            const double spike_relief_multiplier = 0.5;
-            const double repetition_relief_multiplier = 0.95;
-            const double previous_row_relief_multiplier = 0.15;
+            const double jack_speed_nerf = 0.5;            const double simple_repetition_relief = 0.95;
+            const double technical_repetition_relief = 0.20;
+            const double repetition_evenness_exponent = 8.0;
 
             double tapRate = 1000.0 / (hitObject.DeltaTime + tap_rate_offset_ms);
             var (spike, sustain) = speedGrowthOf(hitObject);
@@ -41,26 +39,45 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
             bool isJack = hitObject.Previous() is ManiaDifficultyHitObject previous && previous.Column == hitObject.Column;
 
             // Bonus
-            double sustainReward = 1.0 + sustain_multiplier * sustain;
+            double sustainReward = 1.0 + 1.2 * sustain;
 
             // Nerfs
-            double spikeNerf = 1.0 - spike_relief_multiplier * spike;
+            double spikeNerf = 1.0 - 0.5 * spike;
             double patternMultiplier = isJack ? jack_speed_nerf : 1.0;
-            double settled = 1.0 - repetition_relief_multiplier * hitObject.Row.Repetition;
-            double previousRow = 1.0 - previous_row_relief_multiplier * previousRowRelief(hitObject);
+            // Keep the full nerf for almost perfectly even patterns, but fall away quickly as the cycle spreads less evenly.
+            double repetitionRelief = technical_repetition_relief + (simple_repetition_relief - technical_repetition_relief) * Math.Pow(hitObject.Row.RepetitionEvenness, repetition_evenness_exponent);
+            double settled = 1.0 - repetitionRelief * hitObject.Row.Repetition;
+            double previousRow = 1.0 - previous_row_relief_multiplier * previousRowMultiplier(hitObject);
+            double sameRow = sameRowMultiplier(hitObject);
 
-            return tapRate * spikeNerf * sustainReward * patternMultiplier * settled * previousRow * speed_weight;
+            return tapRate * spikeNerf * sustainReward * patternMultiplier * settled * previousRow * sameRow * speed_weight;
         }
 
         /// <summary>
-        /// A softer take on coordination's previous-row check. A column that has been idle far longer than the
-        /// flow around it means the finger landing here has been resting, so the tap asks a little less. This is
-        /// kept mild (unlike coordination's, which shapes chording) so it only trims isolated refreshes out of a
-        /// stream rather than reshaping the stream itself.
+        /// Similar to previousGapMultiplier in evaluation coordination, it applies a nerf to the note
+        /// relative to the gap between the current object and its previous note in column.
         /// </summary>
-        private static double previousRowRelief(ManiaDifficultyHitObject hitObject)
+        private static double previousRowMultiplier(ManiaDifficultyHitObject hitObject)
         {
             return DiffUtils.Smoothstep(hitObject.ColumnDelta / hitObject.DeltaTime, 3.0, 6.0);
+        }
+
+        /// <summary>
+        /// A lone note is a much smaller share of a wide row than it is of a narrow one, so in higher keymodes
+        /// sparse rows should not tap at full speed. Rows of three notes or more are treated as dense enough
+        /// to pay in full.
+        /// </summary>
+        private static double sameRowMultiplier(ManiaDifficultyHitObject hitObject)
+        {
+            const double single_note_floor = 0.05;
+            const double dense_row_size = 3.0;
+
+            int totalColumns = hitObject.Row.TotalColumns;
+
+            if (totalColumns <= 4)
+                return 1.0;
+
+            return single_note_floor + (1.0 - single_note_floor) * DiffUtils.Smoothstep(hitObject.Row.Size, 1.0, dense_row_size);
         }
 
         /// <summary>
