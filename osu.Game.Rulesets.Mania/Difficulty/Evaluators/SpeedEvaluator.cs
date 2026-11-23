@@ -29,14 +29,9 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
             const double tap_rate_offset_ms = 36;
 
             // A repeat in the same column is one finger doing the work of two, so it taps slower than its gap suggests.
-            const double jack_speed_nerf = 0.5;
-
-            const double sustain_multiplier = 1.2;
-            const double spike_relief_multiplier = 0.5;
-            const double simple_repetition_relief = 0.95;
+            const double jack_speed_nerf = 0.5;            const double simple_repetition_relief = 0.95;
             const double technical_repetition_relief = 0.20;
             const double repetition_evenness_exponent = 8.0;
-            const double previous_row_relief_multiplier = 0.15;
 
             double tapRate = 1000.0 / (hitObject.DeltaTime + tap_rate_offset_ms);
             var (spike, sustain) = speedGrowthOf(hitObject);
@@ -44,14 +39,13 @@ namespace osu.Game.Rulesets.Mania.Difficulty.Evaluators
             bool isJack = hitObject.Previous() is ManiaDifficultyHitObject previous && previous.Column == hitObject.Column;
 
             // Bonus
-            double sustainReward = 1.0 + sustain_multiplier * sustain;
+            double sustainReward = 1.0 + 1.2 * sustain;
 
             // Nerfs
-            double spikeNerf = 1.0 - spike_relief_multiplier * spike;
+            double spikeNerf = 1.0 - 0.5 * spike;
             double patternMultiplier = isJack ? jack_speed_nerf : 1.0;
             // Keep the full nerf for almost perfectly even patterns, but fall away quickly as the cycle spreads less evenly.
-            double repetitionRelief = technical_repetition_relief
-                                      + (simple_repetition_relief - technical_repetition_relief) * Math.Pow(hitObject.Row.RepetitionEvenness, repetition_evenness_exponent);
+            double repetitionRelief = technical_repetition_relief + (simple_repetition_relief - technical_repetition_relief) * Math.Pow(hitObject.Row.RepetitionEvenness, repetition_evenness_exponent);
             double settled = 1.0 - repetitionRelief * hitObject.Row.Repetition;
             double previousRow = 1.0 - previous_row_relief_multiplier * previousRowMultiplier(hitObject);
             double sameRow = sameRowMultiplier(hitObject);
